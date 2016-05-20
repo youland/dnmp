@@ -1,11 +1,5 @@
-aaaa
+#!/bin/bash
 
-bbbbbbbbb
-
-adfadfasdfasdf
-
-cccccccccccccccccccccccccccc
-
-
-
-aaaaaaaaaaaaaaaaaaaaa
+#
+#
+#################
