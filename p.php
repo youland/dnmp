@@ -623,7 +623,6 @@ function displayData(dataJSON)
 <div id="page">
     <div id="header">
         <h1>PHP探针</h1>
-<!--        <div id="lnmplink">for <a href="https://lnmp.org" target="_blank">LNMP一键安装包</a> <a href="https://bbs.vpser.net/forum-25-1.html" target="_blank">LNMP支持论坛</a></div>-->
     </div>
 
 <!--服务器相关参数-->
@@ -790,7 +789,7 @@ foreach ($able as $key=>$value) {
     <td width="32%">PHP信息（phpinfo）：</td>
     <td width="18%">
 		<?php
-		$phpSelf = $_SERVER[PHP_SELF] ? $_SERVER[PHP_SELF] : $_SERVER[SCRIPT_NAME];
+		$phpSelf = $_SERVER['PHP_SELF'] ? $_SERVER['PHP_SELF'] : $_SERVER['SCRIPT_NAME'];
 		$disFuns=get_cfg_var("disable_functions");
 		?>
     <?php echo (0!==preg_match("/phpinfo/i",$disFuns))? '<font color="red">×</font>' :"<a href='$phpSelf?act=phpinfo' target='_blank'>PHPINFO</a>";?>
@@ -955,7 +954,7 @@ else
     <td>GD库支持：</td>
     <td>
     <?php
-        if(function_exists(gd_info)) {
+        if(function_exists("gd_info")) {
             $gd_info = @gd_info();
 	        echo $gd_info["GD Version"];
 	    }else{echo '<font color="red">×</font>';}
@@ -1054,7 +1053,7 @@ else
   </tr>
   <tr>
     <td>SQLite 数据库：</td>
-    <td><?php if(extension_loaded('sqlite3')) {$sqliteVer = SQLite3::version();echo '<font color=green>√</font>　';echo "SQLite3　Ver ";echo $sqliteVer[versionString];}else {echo isfun("sqlite_close");if(isfun("sqlite_close") == '<font color="green">√</font>') {echo "&nbsp; 版本： ".@sqlite_libversion();}}?></td>
+    <td><?php if(extension_loaded('sqlite3')) {$sqliteVer = SQLite3::version();echo '<font color=green>√</font>　';echo "SQLite3　Ver ";echo $sqliteVer['versionString'];}else {echo isfun("sqlite_close");if(isfun("sqlite_close") == '<font color="green">√</font>') {echo "&nbsp; 版本： ".@sqlite_libversion();}}?></td>
     <td>Hyperwave 数据库：</td>
     <td><?php echo isfun("hw_close");?></td>
   </tr>
@@ -1078,7 +1077,7 @@ else
   </tr> 
 </table>
 
-<form action="<?php echo $_SERVER[PHP_SELF]."#bottom";?>" method="post">
+<form action="<?php echo $_SERVER['PHP_SELF']."#bottom";?>" method="post">
 <!--MySQL数据库连接检测-->
 <table width="100%" cellpadding="3" cellspacing="0" align="center">
 	<tr><th colspan="3" class="th_2">MySQL数据库连接检测</th></tr>
@@ -1151,7 +1150,6 @@ else
 <a id="bottom"></a>
 
 <div id="footer">
-&copy; 2012 <a href="https://lnmp.org" target="_blank">LNMP一键安装包</a><br />This Prober was based on Yahei Prober.<br />
 <?php $run_time = sprintf('%0.4f', microtime_float() - $time_start);?>
 Processed in <?php echo $run_time?> seconds. <?php echo memory_usage();?> memory usage.
 
