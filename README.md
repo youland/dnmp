@@ -32,3 +32,5 @@ DNMP即为：Debian + Nginx + MariaDB + PHP。
 * **网络环境**：拥有独立公网 IP 的 VPS（实测 Cloudcone 完美兼容）
 * **权限状态**：使用 `root` 账户进行最高权限操作
 * **交互软件**：能使用SSH登录到服务器
+
+更多请访问：https://dnmp.beg.im
