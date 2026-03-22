@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>极客 DNMP - 终极自动化WEB服务器一键安装脚本</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <style>
+    /* 微调一下代码块的圆角，看起来更现代 */
+    pre { border-radius: 8px !important; }
+  </style>
+</head>
+<body>
+  <div id="app">🚀 正在加载...</div>
+  <script>
+    window.$docsify = {
+      name: '<span>⚡ 极客 DNMP</span>',
+      repo: '', // 如果你有 GitHub 仓库，把链接填在这里，右上角会出现小猫咪
+      loadSidebar: true, // 开启侧边栏
+      subMaxLevel: 3,    // 侧边栏自动提取 h1-h3 的标题生成目录
+      auto2top: true,    // 切换页面自动回到顶部
+      copyCode: {
+        buttonText : '复制命令',
+        errorText  : '复制失败',
+        successText: '已复制'
+      },
+      search: {
+        placeholder: '🔍 搜索文档...',
+        noData: '未找到结果',
+      }
+    }
+  </script>
+  <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-copy-code/dist/docsify-copy-code.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/prismjs@1/components/prism-nginx.min.js"></script>
+</body>
+</html>
