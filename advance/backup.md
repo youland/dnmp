@@ -102,7 +102,8 @@ DATE=$(date +%Y%m%d)
 mkdir -p $LOCAL_POOL
 
 # 1. 流式拉取数据库 (管道传输，Web端不产生任何文件)
-ssh -p $WEB_PORT root@$WEB_IP "mysqldump -u root -p$DB_PASS $DB_NAME | gzip" > $LOCAL_POOL/db_$DATE.sql.gz
+# 注意 -p 后面加了单引号
+ssh -p $WEB_PORT root@$WEB_IP "mysqldump -u root -p'$DB_PASS' $DB_NAME | gzip" > $LOCAL_POOL/db_$DATE.sql.gz
 
 # 2. 增量拉取网站源码 (rsync 极速比对，只下载变动过的文件)
 rsync -avz --delete -e "ssh -p $WEB_PORT" \

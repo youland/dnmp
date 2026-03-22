@@ -84,27 +84,7 @@ nano /etc/php/8.2/fpm/php.ini
 ```
 expose_php = Off
 ```
-**3. 🚦 阻断 IP 直接访问 (极客必配)**  
 
-很多恶意扫描器和未备案的黑产域名，会恶意解析到你的公网 IP 上。我们需要在 Nginx 中加一个“捕鼠夹”。
-新建一个默认配置文件：
-```
-nano /etc/nginx/sites-enabled/default_drop.conf
-```
-写入极其冷酷的 444 阻断规则（444 是 Nginx 专属的非标准状态码，意为“直接切断连接，不返回任何内容”）：
-```
-server {
-    listen 80 default_server;
-    listen 443 ssl default_server;
-    server_name _;
-    
-    # 随便挂载一个自签名证书或主域名的证书，用于应对 HTTPS 扫描
-    ssl_certificate /etc/nginx/ssl/dnmp.com/dnmp.com.cer;
-    ssl_certificate_key /etc/nginx/ssl/dnmp.com/dnmp.com.key;
-    
-    return 444;
-}
-```
 保存并重启：`nginx -t && nginx -s reload`。现在，谁敢用 IP 直接访问你的服务器，他的连接就会被瞬间掐断！
 
 **🐕 四、 恶犬看门：Fail2Ban (可选进阶)**  
