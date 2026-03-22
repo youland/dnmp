@@ -2,6 +2,8 @@
 
 > **🎯 极客战术**：公网就是黑暗森林，所有的便捷都伴随着致命的风险。当我们将性能榨干到了极限之后，现在是时候关上那些不必要的门，为你的服务器建立一道叹息之墙了。
 
+本操作属于锦上添花。
+
 ---
 
  **🚫 一、 免疫密码爆破：SSH 终极加固**
@@ -15,7 +17,13 @@
 ```bash
 ssh-keygen -t ed25519 -C "admin@dnmp"
 ```
+或者
+```bash
+ssh-keygen -t ed25519
+```
 一路回车即可。这会在你本地电脑的` ~/.ssh/` 目录下生成两个文件：`id_ed25519 私钥` 和 `id_ed25519.pub 公钥`。
+
+> 强烈建议将两个文件另外保存，妥善保管。
 
 **2. 将公钥注入服务器**  
 
@@ -36,7 +44,7 @@ ssh-copy-id -p 8066 root@你的服务器IP
 ```
 nano /etc/ssh/sshd_config
 ```
-找到以下配置，极其冷酷地将其改为 no：
+找到以下配置将其改为 no：
 ```
 PasswordAuthentication no
 ```
@@ -59,7 +67,7 @@ ufw allow 8066/tcp  # 你的 SSH 管理端口
 ufw allow 80/tcp    # Web HTTP
 ufw allow 443/tcp   # Web HTTPS
 ```
-**3. 激活叹息之墙**
+**3. 激活防火墙**
 ```
 ufw enable
 ```
