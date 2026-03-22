@@ -43,7 +43,7 @@
 
 =================================================================
 ```
-![alt text](/assets/images/bash_dnmp_h.png)
+![dnmp帮助](../assets/images/bash_dnmp_h.png)
 
 ***
 

@@ -43,7 +43,7 @@ mariadb running... [√]
 
 =================================================================
 ```
-![alt text](/assets/images/dnmp_install_ok.png)
+![dnmp安装成功](../assets/images/dnmp_install_ok.png)
 
 ***
 <span style="color: #e70606;">**♦️安装完成后必看指南**</span>
@@ -51,7 +51,7 @@ mariadb running... [√]
 
 **🌐WEB默认探针页**  
 * 安装完成后，在浏览器访问`http://你的IP`即可打开默认 Web 导航页。页面内已集成 PHP 探针、phpMyAdmin 安全入口，以及各组件的底层版本信息。  
-![alt text](/assets/images/dnmp_web_defalut.png)
+![dnmp默认页面](../assets/images/dnmp_web_defalut.png)
 
 **🛡️SSH 端口重置与登录**  
 * 为抵御暴力破解，脚本已将默认的`SSH`登录端口由`22`强行修改为`8066`。下次登录时必须附加端口参数： 
