@@ -62,7 +62,8 @@ error_log /var/log/nginx/app.dnmp.com.error.log;
 
 保存退出后，永远记得用极客的优雅方式重载引擎（先测试语法，再平滑重启，绝不中断现有站点的访客）：
 ```
-nginx -t && nginx -s reload
+nginx -t 
+nginx -s reload
 ```
 
 **🚦 四、 高阶战术：SEO 流量重定向 (301)**  
@@ -82,7 +83,8 @@ nginx -t && nginx -s reload
 ```
 nano /etc/nginx/sites-enabled/dnmp.com.conf
 ```
-删除里面所有信息，写入以下内容：  
+删除里面所有信息，写入以下内容：
+ 
 ```
 # 流量跳转，把www.dnmp.com的流量全部跳转到dnmp.com
 server {
@@ -111,6 +113,7 @@ server {
     # ... 下面是其他的伪静态、PHP 解析等代码 ...
 }
 ```
+
 再次 `nginx -s reload`。至此，你的服务器已经具备了完美的多站点并发处理能力，且所有的流量规则都在你的绝对掌控之中！
 
 **🚀 五、 终端交付与业务访问**
@@ -121,4 +124,4 @@ server {
 * **动态 CMS 唤醒安装**：如果你通过 SFTP 上传了诸如 WordPress、Typecho 等开源 CMS 的源码，此时 Nginx 会将请求精准交给 PHP-FPM，页面将自动唤醒该系统的图形化安装向导 (Install Wizard)。请配合你之前在数据库中创建的专属账号密码，完成最后的数据对接。
 
 > **⚠️ 极客排错预警**：  
-> 在执行 CMS 在线安装时，如果页面报出 **“无法创建配置文件”** 或 **“目录不可写”** 的致命错误，这百分之百是因为你漏掉了第一步的权限移交。请立即切回 SSH 终端，重新对该站点目录执行降维打击：`chown -R www-data:www-data /var/www/你的站点目录`。
+> 在执行 CMS 在线安装时，如果页面报出 **“无法创建配置文件”** 或 **“目录不可写”** 的致命错误，大概率是因为你漏掉了第一步的权限移交。请立即切回 SSH 终端，重新对该站点目录执行：`chown -R www-data:www-data /var/www/你的站点目录`。
