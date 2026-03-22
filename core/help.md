@@ -3,12 +3,13 @@
 ### <span style="color: #1e90ff;">✒️帮助</span>
 命令：
 ```bash
-# bash dnmp h
+bash dnmp h
 ```
 列出所有可用的命令清单、日常运维指令（如 `dnmp reload` 平滑重载）、以及常见的看日志和排障方法。
 
 输出以下帮助信息：
-```bash
+
+```
 =================================================================
               🚀 DNMP 极客自动化部署工具箱使用手册
 =================================================================
@@ -43,16 +44,24 @@
 
 =================================================================
 ```
+
 ![dnmp帮助](../assets/images/bash_dnmp_h.png)
 
 ***
+**💻 引擎控制台指令速查 (CLI Cheat Sheet)**
 
-**本脚本使用命令大全：**  
-`dnmp start`    : 启动nginx、php、mariadDB  
-`dnmp restart`  : 重启nginx、php、mariadDB  
-`dnmp stop`     : 停止nginx、php、mariadDB  
-`dnmp reload`   : 重载nginx、php、mariadDB  
-`php -v` : 查看php版本号  
-`systemctl (restart|start|stop|reload) nginx` : 单独重启、启动、停止、重载nginx  
-`systemctl (restart|start|stop|reload) php8.x` : 单独重启、启动、停止、重载php  
-`systemctl (restart|start|stop|reload) mysql` : 单独重启、启动、停止、重载mysal  
+```bash
+# 全局自动化指令
+dnmp start     : 一键启动 Nginx、PHP、MariaDB
+dnmp restart   : 一键重启 Nginx、PHP、MariaDB
+dnmp stop      : 一键停止 Nginx、PHP、MariaDB
+dnmp reload    : 平滑重载 Nginx、PHP、MariaDB
+
+# 版本探针
+php -v         : 查看当前 PHP 核心版本号
+
+# 系统级引擎微操 (Systemd)
+systemctl (restart|start|stop|reload) nginx      : 单独控制 Nginx
+systemctl (restart|start|stop|reload) php8.x-fpm : 单独控制 PHP-FPM (注意替换 x)
+systemctl (restart|start|stop|reload) mariadb    : 单独控制 MariaDB
+```
