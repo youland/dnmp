@@ -6,7 +6,7 @@
 ### <span style="color: #1e90ff;">✒️安装WEB服务器环境</span>
 通过`SSH`登录服务器，使用`root`用户输入命令：
 ```bash
-(curl -sSLO https://dnmp.beg.im/scripts/dnmp.sh || wget -qO dnmp https://dnmp.beg.im/scripts/dnmp.sh) && bash dnmp.sh ok
+(curl -sSLO https://dnmp.beg.im/assets/scripts/dnmp.sh || wget -qO dnmp https://dnmp.beg.im/assets/scripts/dnmp.sh) && bash dnmp.sh ok
 ```
 一键安装最新的nginx、mariaDB、PHP等WEB服务器必须的组件，安装过程中，会自动探测系统源的地理位置，自动选取最近的源。
 
