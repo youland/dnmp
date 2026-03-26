@@ -1,7 +1,8 @@
 #!/bin/bash
 # ==============================================================================
-# DNMP 自动部署脚本 (Debian 13 现代化重构版)
+# 小白客 DNMP 自动部署脚本 (Debian 13 现代化重构版)
 # 特性：严格错误控制、动态智能测速换源、PHP 动态版本适配、服务模块化解耦
+# xbke.com
 # ==============================================================================
 
 # 开启极客安全锁：遇到任何未捕获错误立刻停止，防止带病运行
@@ -787,7 +788,7 @@ END
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web控制台</title>
+    <title>小白客DNMP Web控制台 xbke.com</title>
     <style>
         body { font-family: 'Consolas', 'Courier New', monospace; background: #f5f7fa; color: #333333; margin: 0; padding: 20px; line-height: 1.6; }
         .container { max-width: 700px; margin: 40px auto; background: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-top: 4px solid #4CAF50; }
@@ -806,7 +807,7 @@ END
 </head>
 <body>
     <div class="container">
-        <h1>🚀 极客专属 DNMP 运行环境</h1>
+        <h1>🚀 小白客专属 DNMP 运行环境</h1>
         <div class="time">部署完成时间: ${install_time}</div>
 
         <h2>⚙️ 核心组件版本</h2>
@@ -835,7 +836,7 @@ END
             </ul>
         </div>
         
-		<div class="footer">Enjoy your extreme performance server! By <a href="https://dnmp.beg.im" target="_blank" style="color: inherit; text-decoration: none; border-bottom: 1px dashed #666;">极客定制</a> ⚡</div>
+		<div class="footer">欢迎使用小白客DNMP一键安装服务器环境! By <a href="https://xbke.com" target="_blank" style="color: inherit; text-decoration: none; border-bottom: 1px dashed #666;">小白客 DNMP</a> ⚡</div>
     </div>
 </body>
 </html>

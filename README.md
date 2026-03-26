@@ -1,4 +1,4 @@
-# ⚡ 极客 DNMP 一键自动安装WEB服务器环境
+# ⚡ 小白客 DNMP 一键自动安装WEB服务器环境
 [![CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 欢迎来到极客DNMP服务器架构文档！这是一套基于 **Debian** 各个版本打造的极限轻量、高度安全的 Web & 容器一键安装脚本。
@@ -11,7 +11,7 @@ DNMP即为：`Debian + Nginx + MariaDB + PHP`。
 
 **快速安装**，通过`SSH`登录服务器，使用`root`用户输入命令：
 ```bash
-(curl -sSLO https://dnmp.beg.im/dnmp || wget -qO dnmp https://dnmp.beg.im/dnmp) && bash dnmp ok
+(curl -sSLO https://xbke.com/dnmp || wget -qO dnmp https://xbke.com/dnmp) && bash dnmp ok
 ```
 
 ## 🏆 十大硬核架构亮点
@@ -39,4 +39,4 @@ DNMP即为：`Debian + Nginx + MariaDB + PHP`。
 * **权限状态**：使用 `root` 账户进行最高权限操作
 * **交互软件**：能使用SSH登录到服务器
 
-更多详情和使用方法请访问：https://dnmp.beg.im
+更多详情和使用方法请访问：https://xbke.com
