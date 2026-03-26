@@ -1,4 +1,4 @@
-# ⚡ 小白客 DNMP 一键自动安装WEB服务器环境
+# ⚡ 极简 DNMP 一键自动安装WEB服务器环境
 [![CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 欢迎来到极客DNMP服务器架构文档！这是一套基于 **Debian** 各个版本打造的极限轻量、高度安全的 Web & 容器一键安装脚本。
