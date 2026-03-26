@@ -1,7 +1,7 @@
 # ⚡ 极简 DNMP 一键自动安装WEB服务器环境
 [![CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
 
-欢迎来到极客DNMP服务器架构文档！这是一套基于 **Debian** 各个版本打造的极限轻量、高度安全的 Web & 容器一键安装脚本。
+欢迎来到极简DNMP服务器架构文档！这是一套基于 **Debian** 各个版本打造的极限轻量、高度安全的 Web & 容器一键安装脚本。
 
 我们抛弃了市面上臃肿的“全家桶”面板，采用全纯净命令行与局部模块化脚本的形式，将服务器的潜能压榨到极限，并将安全防御做到“密不透风”。
 
