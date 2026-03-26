@@ -11,7 +11,7 @@ DNMP即为：`Debian + Nginx + MariaDB + PHP`。
 
 **快速安装**，通过`SSH`登录服务器，使用`root`用户输入命令：
 ```bash
-(curl -sSLO https://xbke.com/dnmp || wget -qO dnmp https://xbke.com/dnmp) && bash dnmp ok
+(curl -sSLO https://dnmp.net/dnmp || wget -qO dnmp https://dnmp.net/dnmp) && bash dnmp ok
 ```
 
 ## 🏆 十大硬核架构亮点
@@ -39,4 +39,4 @@ DNMP即为：`Debian + Nginx + MariaDB + PHP`。
 * **权限状态**：使用 `root` 账户进行最高权限操作
 * **交互软件**：能使用SSH登录到服务器
 
-更多详情和使用方法请访问：https://xbke.com
+更多详情和使用方法请访问：https://dnmp.net
