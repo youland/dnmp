@@ -14,6 +14,22 @@ DNMP即为：`Debian + Nginx + MariaDB + PHP`。
 (curl -sSLO https://dnmp.net/dnmp || wget -qO dnmp https://dnmp.net/dnmp) && bash dnmp ok
 ```
 
+## 🌐 核心生态矩阵
+
+DNMP 不仅仅是一个脚本，我们为你准备了完整的全套基础设施：
+
+* 🏠 **[DNMP 官方主站 (dnmp.net)](https://dnmp.net)**  
+* 
+  查阅最新、最完整的实战部署文档（包含 Flarum、MariaDB 等顶级程序的部署详细方法）。
+
+* 💬 **[DNMP 交流社区 (bbs.dnmp.net)](https://bbs.dnmp.net)**  
+* 
+  遇到 Bug 报错？配置不生效？欢迎来到我们的极客避难所发帖提问，探讨架构心得。
+
+* 💻 **[GitHub 源代码](https://github.com/youland/dnmp)**  
+* 
+  项目的大本营。欢迎提交 Issue 和 Pull Request 共建生态。如果 DNMP 帮到了你，请务必点亮右上角的 ⭐ **Star**！
+
 ## 🏆 十大硬核架构亮点
 
 * **🔪 无敌生命周期**：脚本兼容各个版本 `Debian` 系统，告别频繁的系统大版本升级焦虑。
