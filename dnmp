@@ -1058,6 +1058,195 @@ EOF
 }
 
 # ==========================================
+# 模块八：交互式数据库创建向导 (免密 + 手动盲打双重防御)
+# ==========================================
+function create_new_db() {
+    echo "===================================================="
+    echo "🚀 DNMP 安全数据库创建向导"
+    echo "===================================================="
+
+    # --------------------------------------------------
+    # 0. 核心探针：双通道连通性测试 (Fail-Fast 机制)
+    # --------------------------------------------------
+    echo "🔍 正在检测底层 MySQL/MariaDB 免密连通性..."
+    
+    USE_MANUAL_PASS=false
+
+    # [通道 A] 尝试 ~/.my.cnf 免密连接
+    if mysql -e "SELECT 1;" >/dev/null 2>&1; then
+        echo "✅ 免密通道畅通，引擎响应正常！"
+        echo "----------------------------------------------------"
+    else
+        # [通道 B] 免密失败，降级为手动验证
+        echo "⚠️ 免密通道失效或未配置。启动手动后备方案..."
+        echo "💡 提示: 终端已开启静默防窥模式，输入密码时屏幕不会显示任何字符（包括星号），请放心盲打。"
+        echo "----------------------------------------------------"
+        
+        # 第一次输入
+        read -s -p "🔑 请输入 MySQL root 密码: " ROOT_PASS
+        echo "" # 补充换行符，防止排版错乱
+        
+        # 第二次确认
+        read -s -p "🔁 请再次输入密码以确认: " ROOT_PASS_CONFIRM
+        echo "" 
+        
+        # [防御拦截] 校验两次密码是否一致
+        if [ "$ROOT_PASS" != "$ROOT_PASS_CONFIRM" ]; then
+            echo "❌ 致命错误: 两次输入的密码不一致！"
+            echo "🛑 为防止误操作，任务已安全中止，请重新运行指令。"
+            exit 1
+        fi
+        
+        # 再次发射探针，使用环境变量注入密码，测试密码是否真实有效
+        echo "⏳ 正在校验密码有效性..."
+        if env MYSQL_PWD="${ROOT_PASS}" mysql -uroot -e "SELECT 1;" >/dev/null 2>&1; then
+            echo "✅ 密码验证通过，引擎响应正常！"
+            echo "----------------------------------------------------"
+            USE_MANUAL_PASS=true
+        else
+            echo "❌ 致命错误: 密码错误或数据库服务未运行！"
+            echo "🛑 任务已安全中止。"
+            exit 1
+        fi
+    fi
+
+    # --------------------------------------------------
+    # 1. 交互式收集情报 (连通性验证通过后才执行)
+    # --------------------------------------------------
+    read -p "请输入新的【数据库名称】(如 flarum_db): " NEW_DB_NAME
+    if [ -z "$NEW_DB_NAME" ]; then
+        echo "❌ 错误: 数据库名称不能为空！"
+        exit 1
+    fi
+
+    read -p "请输入新的【数据库用户名】(如 flarum_user): " NEW_DB_USER
+    if [ -z "$NEW_DB_USER" ]; then
+        echo "❌ 错误: 用户名不能为空！"
+        exit 1
+    fi
+
+    read -p "请输入该用户的【数据库密码】: " NEW_DB_PASS
+    if [ -z "$NEW_DB_PASS" ]; then
+        echo "❌ 错误: 密码不能为空！"
+        exit 1
+    fi
+
+    echo "⏳ 正在底层引擎中执行物理级隔离与授权..."
+
+    # --------------------------------------------------
+    # 2. 准备核心建库 SQL 指令
+    # --------------------------------------------------
+    SQL_STMT="
+    CREATE DATABASE IF NOT EXISTS \`${NEW_DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE USER IF NOT EXISTS '${NEW_DB_USER}'@'localhost' IDENTIFIED BY '${NEW_DB_PASS}';
+    CREATE USER IF NOT EXISTS '${NEW_DB_USER}'@'%' IDENTIFIED BY '${NEW_DB_PASS}';
+    GRANT ALL PRIVILEGES ON \`${NEW_DB_NAME}\`.* TO '${NEW_DB_USER}'@'localhost';
+    GRANT ALL PRIVILEGES ON \`${NEW_DB_NAME}\`.* TO '${NEW_DB_USER}'@'%';
+    FLUSH PRIVILEGES;
+    "
+
+    # --------------------------------------------------
+    # 3. 智能分发执行
+    # --------------------------------------------------
+    if [ "$USE_MANUAL_PASS" = true ]; then
+        env MYSQL_PWD="${ROOT_PASS}" mysql -uroot -e "$SQL_STMT"
+        EXEC_RESULT=$?
+    else
+        mysql -e "$SQL_STMT"
+        EXEC_RESULT=$?
+    fi
+
+    # --------------------------------------------------
+    # 4. 结果校验与输出
+    # --------------------------------------------------
+    if [ $EXEC_RESULT -eq 0 ]; then
+		# --------------------------------------------------
+		# [新增功能] 追加专属通行证到 ~/.my.cnf (使用后缀隔离组)
+		# --------------------------------------------------
+		echo "" >> ~/.my.cnf
+		echo "[client_${NEW_DB_USER}]" >> ~/.my.cnf
+		echo "user = ${NEW_DB_USER}" >> ~/.my.cnf
+		echo "password = ${NEW_DB_PASS}" >> ~/.my.cnf
+        echo "✅ 数据库隔离空间创建成功！"
+        echo "----------------------------------------------------"
+        echo "👉 数据库名 : ${NEW_DB_NAME}"
+        echo "👉 用户名   : ${NEW_DB_USER}"
+        echo "👉 密  码   : ${NEW_DB_PASS}"
+        echo "----------------------------------------------------"
+        echo "💡 请将以上信息直接填入你新网站的配置文件中。"
+    else
+        echo "❌ 创建失败！在执行建库 SQL 时发生底层异常。"
+    fi
+}
+
+# ==========================================
+# root 密码全自动修改向导
+# ==========================================
+function change_root_pw() {
+    echo "===================================================="
+    echo "🔐 DNMP 底层引擎 root 密码修改向导"
+    echo "===================================================="
+
+    # 1. 探针：检测当前免密通道是否有效
+    if ! mysql -e "SELECT 1;" >/dev/null 2>&1; then
+        echo "❌ 致命错误: 当前 ~/.my.cnf 的凭据已失效！"
+        echo "🛑 必须保证当前通道畅通，才能执行密码修改手术。请先手动修复 ~/.my.cnf。"
+        exit 1
+    fi
+
+    echo "✅ 引擎身份验证通过，当前免密通道畅通。"
+    echo "----------------------------------------------------"
+    echo "💡 提示: 终端已开启静默防窥模式，请放心盲打。"
+
+    # 2. 盲打双重校验获取新密码
+    read -s -p "🔑 请输入【新】的 root 密码: " NEW_ROOT_PASS
+    echo "" 
+    
+    read -s -p "🔁 请再次输入新密码确认: " NEW_ROOT_PASS_CONFIRM
+    echo "" 
+
+    if [ "$NEW_ROOT_PASS" != "$NEW_ROOT_PASS_CONFIRM" ]; then
+        echo "❌ 致命错误: 两次输入的新密码不一致！任务中止。"
+        exit 1
+    fi
+
+    echo "⏳ 正在底层引擎中更换锁芯..."
+
+    # 3. 核心手术 1：修改数据库底层的真实密码
+    # 涵盖 localhost 和 % 两种常见权限，确保不遗漏
+    mysql -e "
+    ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '${NEW_ROOT_PASS}';
+    ALTER USER IF EXISTS 'root'@'%' IDENTIFIED BY '${NEW_ROOT_PASS}';
+    FLUSH PRIVILEGES;
+    "
+
+    if [ $? -ne 0 ]; then
+        echo "❌ 密码修改失败！底层 SQL 引擎拒绝了该操作。"
+        exit 1
+    fi
+
+    echo "✅ 底层锁芯已成功更换！"
+    echo "⏳ 正在重新更新本地 ~/.my.cnf 钥匙..."
+
+    # 4. 核心手术 2：智能修改配置文件 (只改 root 密码，绝不误伤追加的其他用户)
+    # 使用 awk 神技：只替换匹配到的【第一个】 password 字段
+    awk -v pass="$NEW_ROOT_PASS" '
+    !done && /^password[ \t]*=/ { 
+        print "password = " pass; 
+        done=1; 
+        next 
+    } 1
+    ' ~/.my.cnf > ~/.my.cnf.tmp && mv ~/.my.cnf.tmp ~/.my.cnf
+
+    # 确保权限依然是绝对安全的 600
+    chmod 600 ~/.my.cnf
+
+    echo "✅ ~/.my.cnf 钥匙打磨完成！"
+    echo "----------------------------------------------------"
+    echo "🎉 恭喜！root 密码全套更新流程已闭环！你现在可以随时使用免密通道了。"
+}
+
+# ==========================================
 # 独立高危模块：Debian 动态嗅探与大版本跨代升级
 # 触发方式：bash dnmp os
 # ==========================================
@@ -1185,7 +1374,7 @@ function debian_os_upgrade() {
 }
 
 # ==========================================
-# 模块八：全局帮助文档 (Help)
+# 模块九：全局帮助文档 (Help)
 # ==========================================
 function show_help() {
     echo -e ""
@@ -1319,6 +1508,12 @@ ok)
     ;;
 build)
     install_build_env
+    ;;
+db)	
+	create_new_db
+	;;
+pw)
+    change_root_pw
     ;;
 *)
     # 拦截所有未知参数或空参数，直接弹出完美的帮助面板
