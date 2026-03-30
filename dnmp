@@ -315,7 +315,7 @@ function add_app_sources {
 #  纯粹的基础网络与运维工具 (轻量级)
 function install_base_tools {
     print_info "[+] 安装基础系统与网络运维工具...\n"
-    check_install PackageTools "wget curl git zip unzip screen net-tools sudo socat gnupg2 ca-certificates lsb-release"
+    check_install PackageTools "wget curl git zip unzip screen net-tools sudo socat gnupg2 ca-certificates lsb-release cron"
 }
 
 #  专门的 C/C++ 编译环境与核心开发库 (重型武装)
@@ -500,10 +500,34 @@ server {
 END
 
     if [ ! -f /etc/nginx/conf.d/discuzx ]; then
+        print_info "[+] 正在拉取 Nginx 配置文件...\n"
         mkdir -p /etc/nginx/conf.d
+        
+        # 第一次清空目录，为拉取腾出纯净空间
         rm -rf /etc/nginx/conf.d/*
-        git clone https://gitee.com/nbweb/nginx_conf /etc/nginx/conf.d
-        rm -rf /etc/nginx/conf.d/.git
+
+        # 尝试通道 A：GitHub (专属镜像，完美适配洛杉矶海外网络)
+        env GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://github.com/youland/nginx_conf.git /etc/nginx/conf.d >/dev/null 2>&1 || true
+
+        # 判定通道 A 是否成功 (通过检查是否生成了 .git 隐藏目录)
+        if [ ! -d /etc/nginx/conf.d/.git ]; then
+            print_warn "[-] GitHub 节点拉取配置超时或失败，秒切 Gitee 备用通道...\n"
+            
+            # 极客细节：必须再次清理战场，防止 GitHub 留下残缺文件导致 Gitee 克隆报错
+            rm -rf /etc/nginx/conf.d/*
+            
+            # 尝试通道 B：Gitee 仓库
+            env GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://gitee.com/nbweb/nginx_conf.git /etc/nginx/conf.d >/dev/null 2>&1 || true
+        fi
+
+        # 验证与清理
+        if [ -d /etc/nginx/conf.d/.git ]; then
+            # 阅后即焚：销毁 Git 追踪文件夹，保持 Nginx 配置目录的绝对纯净
+            rm -rf /etc/nginx/conf.d/.git
+            print_green "[√] Nginx 配置文件拉取并部署完毕！\n"
+        else
+            print_red "[!] Nginx 配置文件双通道拉取均失败，请检查网络或仓库状态。\n"
+        fi
     fi
 
     chown www-data:www-data -R /var/www
@@ -637,20 +661,29 @@ END
     mkdir -p /var/www/default /etc/dnmp
     
     if [ ! -f /etc/dnmp/p.php ]; then
-        # 抛弃脆弱的 raw 直链，使用 /tmp 作为“无痕中转站”
-        # 使用 --depth 1 浅克隆，速度极快，且 100% 绕过 Gitee 防盗链
-        git clone --depth 1 https://gitee.com/nbweb/dnmp_d.git /tmp/dnmp_d_temp >/dev/null 2>&1 || true
+        print_info "[+] 正在拉取 PHP 性能探针 (Raw 直链双源极速模式)...\n"
         
-        if [ -f /tmp/dnmp_d_temp/p.php ]; then
-            mv /tmp/dnmp_d_temp/p.php /etc/dnmp/p.php
-            ln -sf /etc/dnmp/p.php /var/www/default/p.php
-            print_green "[√] PHP 探针部署完毕！\n"
+        # 抛弃沉重的 git，直接定义轻量级 Raw 直链
+        local probe_dest="/etc/dnmp/p.php"
+        local github_raw="https://raw.githubusercontent.com/youland/dnmp_d/refs/heads/master/p.php"
+        local gitee_raw="https://gitee.com/nbweb/dnmp_d/raw/master/p.php"
+
+        # 尝试通道 A：GitHub Raw (你的专属镜像，洛杉矶节点绝配，超时5秒)
+        if wget -q -T 5 -t 3 -O "$probe_dest" "$github_raw"; then
+            print_green "[√] GitHub 节点拉取探针成功！\n"
+            ln -sf "$probe_dest" /var/www/default/p.php
         else
-            print_red "[!] 探针拉取失败 (仓库可能无法访问)，已跳过。\n"
+            print_warn "[-] GitHub 直链超时，秒切 Gitee 备用直链...\n"
+            
+            # 尝试通道 B：Gitee Raw (官方原版容灾，超时5秒)
+            if wget -q -T 5 -t 3 -O "$probe_dest" "$gitee_raw"; then
+                print_green "[√] Gitee 节点拉取探针成功！\n"
+                ln -sf "$probe_dest" /var/www/default/p.php
+            else
+                print_red "[!] 探针双直链拉取均被阻断，安全跳过。\n"
+                rm -f "$probe_dest" # 清除可能下载了一半的残缺空文件
+            fi
         fi
-        
-        # 阅后即焚：彻底销毁临时中转文件，保持系统的绝对纯净！
-        rm -rf /tmp/dnmp_d_temp
     else
         print_warn "[-] PHP 探针已存在，跳过安装。\n"
     fi
@@ -807,7 +840,7 @@ END
 </head>
 <body>
     <div class="container">
-        <h1>🚀 小白客专属 DNMP 运行环境</h1>
+        <h1>🚀 极简 DNMP 运行环境</h1>
         <div class="time">部署完成时间: ${install_time}</div>
 
         <h2>⚙️ 核心组件版本</h2>
@@ -836,7 +869,7 @@ END
             </ul>
         </div>
         
-		<div class="footer">欢迎使用极简DNMP一键安装服务器环境! By <a href="https://dnmp.net" target="_blank" style="color: inherit; text-decoration: none; border-bottom: 1px dashed #666;">小白客 DNMP</a> ⚡</div>
+		<div class="footer">欢迎使用极简DNMP一键安装服务器环境! By <a href="https://dnmp.net" target="_blank" style="color: inherit; text-decoration: none; border-bottom: 1px dashed #666;">极简 DNMP</a> ⚡</div>
     </div>
 </body>
 </html>
@@ -942,7 +975,7 @@ function install_portainer {
     docker volume create portainer_data >/dev/null 2>&1
 
     # 3. 一键拉取并运行 (使用社区商业版 CE，完全免费且功能最强)
-    print_info "  -> 正在拉取并启动容器 (端口 9000)...\n"
+    print_info "  -> 正在拉取并启动容器 (容器内端口 9000)...\n"
     
     # 这里我们映射 9000 端口，这是最经典的 Portainer 访问端口
     docker run -d \
@@ -957,14 +990,13 @@ function install_portainer {
     # 4. 验证状态
     if [ "$(docker inspect -f '{{.State.Running}}' portainer)" == "true" ]; then
         print_green "[√] Portainer 部署成功！\n"
-        # 自动获取当前机器的局域网 IP
-        LOCAL_IP=$(hostname -I | awk '{print $1}')
-        print_info "  -> 管理地址: http://${LOCAL_IP}:9000\n"
-        print_warn "  -> 请尽快登录设置管理员密码。\n"
+        # 自动获取当前机器的公网 IP
+        local REMOTE_IP=$(curl -s -4 icanhazip.com || hostname -I | awk '{print $1}')
+        print_info "  -> 管理地址: http://${REMOTE_IP}:9090\n"
+        print_warn "  -> 请尽快登录设置管理员密码 (初次登录需在 5 分钟内完成)。\n"
     else
         print_red "[!] Portainer 启动失败，请检查 Docker 日志。\n"
     fi
-	print_info "  -> 管理地址: http://${LOCAL_IP}:9090\n"
 }
 
 # ==========================================
@@ -1343,14 +1375,23 @@ function debian_os_upgrade() {
     # ------------------------------------------
     # 第四阶段：核心手术与两段式升级
     # ------------------------------------------
-    echo "-> 正在备份并动态重写 APT 软件源..."
-    # 备份文件名加上时间戳，防止多次执行覆盖备份
-    cp /etc/apt/sources.list "/etc/apt/sources.list.bak_$(date +%F_%H%M%S)"
-    sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list
-    
-    if ls /etc/apt/sources.list.d/*.list 1> /dev/null 2>&1; then
-        sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list.d/*.list
+    echo "-> 正在全盘备份并动态重写 APT 软件源..."
+    # 架构级防线：直接备份整个 apt 目录，给自己留一颗绝对安全的后悔药
+    cp -a /etc/apt "/etc/apt.bak_$(date +%F_%H%M%S)"
+
+    # 1. 替换传统的 sources.list (防报错机制)
+    if [ -f /etc/apt/sources.list ]; then
+        sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list
     fi
+
+    # 2. 扫描并替换扩展目录下的所有 .list 和现代的 .sources 文件
+    if [ -d /etc/apt/sources.list.d ]; then
+        # 替换老的 .list 格式 (如 docker.list, php.list)
+        sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list.d/*.list 2>/dev/null || true
+        # 替换 Debian 12 引入的现代 .sources 格式 (如 debian.sources)
+        sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+    fi
+    echo "✅ 软件源全盘跨代替换完成！"
 
     export DEBIAN_FRONTEND=noninteractive
     echo "-> [1/3] 拉取新系统 ($LATEST_CODENAME) 索引..."
