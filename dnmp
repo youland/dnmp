@@ -50,8 +50,11 @@ function check_sanity {
 }
 
 function get_hostip {
-    hostipv4=$(ip address | grep 'inet' | grep -v '127.0.0.[0-9]\|inet6' | cut -d/ -f1 | awk 'NR==1 {print $2}')
-    hostipv6=$(ip -6 address show | grep inet6 | grep -v '::1/128' | awk 'NR==1 {print $2}' | cut -d'/' -f1 || echo "")
+    # IPv4：使用阿里公共 DNS (223.5.5.5) 作为本地内核路由探针
+    hostipv4=$(ip route get 223.5.5.5 2>/dev/null | grep -oP 'src \K\S+' || hostname -I | awk '{print $1}')
+    
+    # IPv6：使用阿里公共 DNS IPv6 (2400:3200::1) 作为本地内核路由探针
+    hostipv6=$(ip -6 route get 2400:3200::1 2>/dev/null | grep -oP 'src \K\S+' || ip -6 address show | grep inet6 | grep -v -e '::1/128' -e 'fe80' | awk 'NR==1 {print $2}' | cut -d'/' -f1 || echo "")
 }
 
 function detect_region {
@@ -71,9 +74,9 @@ function detect_region {
     # ==========================================
     local ip_info_1=""
     if command -v curl >/dev/null 2>&1; then
-        ip_info_1=$(curl -A "$UA" -sL -m 3 https://myip.ipip.net 2>/dev/null || echo "")
+        ip_info_1=$(curl -4 -A "$UA" -sL -m 8 https://myip.ipip.net 2>/dev/null || echo "")
     else
-        ip_info_1=$(wget -U "$UA" -qO- -T 3 https://myip.ipip.net 2>/dev/null || echo "")
+        ip_info_1=$(wget -4 -U "$UA" -qO- -T 8 https://myip.ipip.net 2>/dev/null || echo "")
     fi
 
     # 执行三重特征匹配
@@ -86,9 +89,9 @@ function detect_region {
         # ==========================================
         local ip_info_2=""
         if command -v curl >/dev/null 2>&1; then
-            ip_info_2=$(curl -A "$UA" -sL -m 3 http://cip.cc 2>/dev/null || echo "")
+            ip_info_2=$(curl -4 -A "$UA" -sL -m 8 http://cip.cc 2>/dev/null || echo "")
         else
-            ip_info_2=$(wget -U "$UA" -qO- -T 3 http://cip.cc 2>/dev/null || echo "")
+            ip_info_2=$(wget -4 -U "$UA" -qO- -T 8 http://cip.cc 2>/dev/null || echo "")
         fi
 
         # 执行三重特征匹配
@@ -110,21 +113,71 @@ function detect_region {
 }
 
 function replace_system_sources {
-    if [ "${IS_CHINA:-0}" -eq 1 ]; then
-        print_info "[+] 检测到国内网络，正在将系统 APT 源替换为清华大学镜像 (TUNA)...\n"
-        
-        # 1. 替换 Debian 官方底座源 (兼容 debian.sources 和 sources.list)
-        sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
-        sed -i 's|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
-        
-        # 2. 替换树莓派特有源 (如果是跑在树莓派上)
-        sed -i 's|http://archive.raspberrypi.com/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.list 2>/dev/null || true
-        sed -i 's|http://archive.raspberrypi.org/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.list 2>/dev/null || true
-        
-        print_green "[√] 系统底座镜像源已成功替换为清华源！\n"
-    else
-        print_info "[*] 海外网络，保持系统默认底座源。\n"
+    # 1. 动态获取当前 Debian 版本代号 (支持接收外部传参，为跨代升级提供火力支援)
+    local CODENAME="${1:-}"
+    if [ -z "$CODENAME" ]; then
+        CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+        if [ -z "$CODENAME" ]; then
+            CODENAME="bookworm" # 默认保底
+        fi
     fi
+
+    # 针对 Debian 12 自动追加 non-free-firmware 组件
+    local COMPONENTS="main contrib non-free"
+    if [ "$CODENAME" = "bookworm" ]; then
+        COMPONENTS="main contrib non-free non-free-firmware"
+    fi
+
+    print_info "[*] 正在接管并重置 APT 基础源 (Codename: $CODENAME)...\n"
+
+    # 2. 清空主文件，防范多源冲突
+    if [ -f "/etc/apt/sources.list" ]; then
+        mv /etc/apt/sources.list /etc/apt/sources.list.bak 2>/dev/null || true
+        # 换成你想要的标准化注释指引
+        echo "# See /etc/apt/sources.list.d/debian.list" > /etc/apt/sources.list
+    fi
+
+    # 3. 清掉旧格式源 (防范厂商自带的 .sources 冲突)
+    rm -f /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+    rm -f /etc/apt/sources.list.d/debian.list 2>/dev/null || true
+
+    # 4. 覆盖重写 (全部输出到 debian.list)
+    if [ "${IS_CHINA:-0}" -eq 1 ]; then
+        print_info "[+] 检测到国内网络，正在写入清华大学镜像 (TUNA)...\n"
+        cat << EOF > /etc/apt/sources.list.d/debian.list
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ $CODENAME $COMPONENTS
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ ${CODENAME}-updates $COMPONENTS
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ ${CODENAME}-backports $COMPONENTS
+deb https://mirrors.tuna.tsinghua.edu.cn/debian-security ${CODENAME}-security $COMPONENTS
+EOF
+    else
+        print_info "[*] 海外网络，正在写入官方 Debian 镜像...\n"
+        cat << EOF > /etc/apt/sources.list.d/debian.list
+deb http://deb.debian.org/debian/ $CODENAME $COMPONENTS
+deb http://deb.debian.org/debian/ ${CODENAME}-updates $COMPONENTS
+deb http://deb.debian.org/debian/ ${CODENAME}-backports $COMPONENTS
+deb http://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
+EOF
+    fi
+
+    # 5. 保留树莓派的特殊处理 (兼容 .list 与 .sources 双格式)
+    if [ "${IS_CHINA:-0}" -eq 1 ]; then
+        print_info "  -> 检测到树莓派专用源，正在切换国内清华镜像...\n"
+        
+        # 处理旧版格式 (Bullseye 及以下)
+        if [ -f "/etc/apt/sources.list.d/raspi.list" ]; then
+            sed -i 's|http://archive.raspberrypi.com/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.list 2>/dev/null || true
+            sed -i 's|http://archive.raspberrypi.org/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.list 2>/dev/null || true
+        fi
+        
+        # 处理新版 DEB822 格式 (Bookworm 及以上)
+        if [ -f "/etc/apt/sources.list.d/raspi.sources" ]; then
+            sed -i 's|http://archive.raspberrypi.com/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.sources 2>/dev/null || true
+            sed -i 's|http://archive.raspberrypi.org/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.sources 2>/dev/null || true
+        fi
+    fi
+
+    print_green "[√] 系统底座镜像源重置完成！架构绝对纯净！\n"
 }
 
 # ==========================================
@@ -187,27 +240,31 @@ function remove_unneeded {
 
 function config_ssh_port {
     print_info "[+] 配置 SSH 远程访问 (修改端口为 8066)...\n"
-    local SSHD_CONF="/etc/ssh/sshd_config"
+	
+	# 确保 sshd_config.d 目录存在
+    mkdir -p /etc/ssh/sshd_config.d/
+	
+    # 修改端口，直接生成高优先级的专属配置文件，覆盖写入，保证幂等性
+    cat <<EOF > /etc/ssh/sshd_config.d/99-dnmp-port.conf
+# ==========================================
+# DNMP 自定义 SSH 端口配置
+# ==========================================
+Port 8066
+EOF
 
-    # 1. 幂等性检测：如果已经有 Port 8066，说明已经改过了，直接跳过防重复追加
-    if grep -qE "^Port\s+8066" "$SSHD_CONF"; then
-        print_warn "[-] SSH 端口已配置为 8066，完美跳过。\n"
-        return
-    fi
+	# 身份验证策略
+    cat <<EOF > /etc/ssh/sshd_config.d/99-dnmp-auth.conf
+# ==========================================
+# DNMP SSH 登录认证策略
+# ==========================================
+# 开启密钥登录支持
+PubkeyAuthentication yes
 
-    # 2. 核心正则匹配与替换
-    if grep -qE "^#?\s*Port\s+22" "$SSHD_CONF"; then
-        # 解释：^#? 代表开头可能有 # 也可能没有；\s* 代表中间可能有零个或多个空格
-        # 只要命中，一律将其格式化为标准的 #Port 22 并在下方插入 Port 8066
-        sed -i -E 's/^#?\s*Port\s+22.*/#Port 22\nPort 8066/' "$SSHD_CONF"
-    else
-        # 3. 终极防御：如果文件里连 Port 22 的影子都没有
-        # 极客细节：绝对不能用 >> 追加到文件末尾！因为 sshd_config 尾部常有 Match 块，加在最后面会导致端口全局失效。
-        # 解决方法：强行插在文件第 1 行！
-        sed -i '1i\Port 8066' "$SSHD_CONF"
-    fi
+# 初始允许密码登录 (⚠️ 强烈建议：配置好密钥并测试成功后，手动改为 no)
+PasswordAuthentication yes
+EOF
 
-    # 4. 重启服务使之生效
+    # 重启服务使之生效
     systemctl restart ssh || systemctl restart sshd
     print_green "[√] SSH 端口 8066 配置并重启完毕！\n"
 }
@@ -476,28 +533,77 @@ END
     
     cat > /etc/nginx/sites-enabled/default <<END
 # ==========================================
-# 全局防线 1：处理 HTTP (80端口) 的默认 IP 访问
-# 作用：展示极客专属控制台面板
+# 全局防线 1：只允许精确通过 IP 访问面板
+# 作用：展示控制台面板
 # ==========================================
 server {
-    listen  80 default_server;
-    server_name _;
-    access_log  /var/log/nginx/localhost.access.log;
-    root   /var/www/default;
-    index  index.html index.htm index.php;
+    listen 80;
+    server_name ${hostipv4};
+    
+    root /var/www/default;
+    index index.html index.htm index.php;
     include /etc/nginx/fastcgi_php;
+    
+    access_log /var/log/nginx/ip_access.log;
 }
 
 # ==========================================
-# 全局防线 2：处理 HTTPS (443端口) 的默认 IP 访问
-# 作用：防 Shodan 等黑客引擎扫描，直接斩断不合法的 SSL 握手
+# 2. HTTP (80) 阻断：阻断所有未配置的解析域名
+# ==========================================
+server {
+    listen 80 default_server;
+    server_name _;
+
+    # 🟢 保留 ACME 绿灯通道，方便签证书
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        root /var/www/default;
+    }    
+
+    # 🔴 除 ACME 以外的所有访问，直接拔网线！
+    location / {
+        return 444; 
+    }
+}
+
+# ==========================================
+# 3. HTTPS (443) 终极黑洞：拒绝所有 SSL 握手
 # ==========================================
 server {
     listen 443 ssl default_server;
     server_name _;
+
+    # 🔴 灵魂指令：在底层斩断 TCP 握手！
     ssl_reject_handshake on;
 }
 END
+
+	# ==========================================
+    # 注入：全局 ACME 续签模块
+    # ==========================================
+    echo -e "\033[1;36m[*] 正在生成 Nginx 全局 ACME 验证模块...\033[0m"
+    
+    # 确保验证文件的目录存在
+    mkdir -p /var/www/default/.well-known/acme-challenge/
+    chown -R www-data:www-data /var/www/default
+    
+    # 写入公共配置文件
+    cat << 'EOF' > /etc/nginx/acme_challenge.conf
+# --------------------------------------------------------
+# Let's Encrypt / ACME 全局验证通道
+# 作用：拦截所有 .well-known 请求，统一转入 default 目录
+# 需要在域名配置文件加入这一行：
+#   include /etc/nginx/acme_challenge.conf;
+# --------------------------------------------------------
+location ^~ /.well-known/acme-challenge/ {
+    allow all;
+    root /var/www/default;
+    # 关闭日志，防止每次验证产生垃圾日志
+    access_log off;
+    log_not_found off;
+}
+EOF
+    echo -e "\033[0;32m[√] 全局 ACME 模块 (/etc/nginx/acme_challenge.conf) 部署完毕！\033[0m"
 
     if [ ! -f /etc/nginx/conf.d/discuzx ]; then
         print_info "[+] 正在拉取 Nginx 配置文件...\n"
@@ -821,7 +927,7 @@ END
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小白客DNMP Web控制台 dnmp.net</title>
+    <title>极简DNMP Web控制台 dnmp.net</title>
     <style>
         body { font-family: 'Consolas', 'Courier New', monospace; background: #f5f7fa; color: #333333; margin: 0; padding: 20px; line-height: 1.6; }
         .container { max-width: 700px; margin: 40px auto; background: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-top: 4px solid #4CAF50; }
@@ -991,7 +1097,7 @@ function install_portainer {
     if [ "$(docker inspect -f '{{.State.Running}}' portainer)" == "true" ]; then
         print_green "[√] Portainer 部署成功！\n"
         # 自动获取当前机器的公网 IP
-        local REMOTE_IP=$(curl -s -4 icanhazip.com || hostname -I | awk '{print $1}')
+        local REMOTE_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' || hostname -I | awk '{print $1}')
         print_info "  -> 管理地址: http://${REMOTE_IP}:9090\n"
         print_warn "  -> 请尽快登录设置管理员密码 (初次登录需在 5 分钟内完成)。\n"
     else
@@ -1036,9 +1142,10 @@ function deploy_acme() {
             curl -4 -sSL --connect-timeout 15 https://gitee.com/neilpang/acme.sh/raw/master/acme.sh | sh -s email=${EMAIL}
         fi
 
-        # 加载环境变量
-        export LE_WORKING_DIR="${HOME}/.acme.sh"
-        [ -f ~/.acme.sh/acme.sh ] && alias acme.sh="${HOME}/.acme.sh/acme.sh"
+        # 加载 acme.sh 专属环境变量（比 source ~/.bashrc 安全且绝对生效）
+        if [ -f "${HOME}/.acme.sh/acme.sh.env" ]; then
+            source "${HOME}/.acme.sh/acme.sh.env"
+        fi
 
         if [ -f ~/.acme.sh/acme.sh ]; then
             ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
@@ -1056,7 +1163,7 @@ function deploy_acme() {
 
     # 2. 签发证书逻辑
     if systemctl is-active --quiet nginx; then
-        echo -e "\033[1;33m[*] 检测到 Nginx 正在运行，使用 --nginx 模式...\033[0m"
+        echo -e "\033[1;33m[*] 检测到 Nginx 正在运行，使用 --webroot 模式...\033[0m"
 
         # 确保有域名占位配置
         if ! grep -qR "server_name.*${DOMAIN}" /etc/nginx/ 2>/dev/null; then
@@ -1071,7 +1178,7 @@ EOF
             systemctl reload nginx >/dev/null 2>&1
         fi
 
-        ~/.acme.sh/acme.sh --issue -d ${DOMAIN} --nginx
+        ~/.acme.sh/acme.sh --issue -d ${DOMAIN} --webroot /var/www/default
 
         if [ $? -eq 0 ]; then
             ~/.acme.sh/acme.sh --install-cert -d ${DOMAIN} --ecc \
@@ -1100,6 +1207,78 @@ EOF
                 --reloadcmd     "systemctl reload nginx >/dev/null 2>&1 || true" >/dev/null 2>&1
             
             echo -e "\033[0;32m[√] SSL 证书部署成功！\033[0m"
+			
+			# ==============================================================
+            # 🚀 自动化生成并注入最终的生产级 Nginx 业务配置
+            # ==============================================================
+            local NGINX_CONF="/etc/nginx/sites-enabled/${DOMAIN}.conf"
+            local WEB_ROOT="/var/www/${DOMAIN}"
+            
+            echo -e "\033[1;36m[*] 证书部署完毕，正在为您自动生成 Nginx 配置...\033[0m"
+            
+            # 1. 创建专属目录
+            mkdir -p ${WEB_ROOT}
+            chown -R www-data:www-data ${WEB_ROOT}
+            
+            # 2. 动态写入配置 (完美融合 80跳转 与 443承载)
+            cat <<EOF > ${NGINX_CONF}
+# ==========================================
+# HTTP (80) - 负责接客、验证与强制带路
+# ==========================================
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    # 🟢 引入全局 Let's Encrypt 验证防线，用于域名ssl证书续签
+    include /etc/nginx/acme_challenge.conf;
+
+    # 🔴 强制跳转：正常访客一律强制到 HTTPS
+    location / {
+        return 301 https://${DOMAIN}\$request_uri;
+    }
+}
+
+# ==========================================
+# HTTPS (443) - 核心业务承载区
+# ==========================================
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN};
+    
+    # 物理路径
+    root ${WEB_ROOT};
+    index index.html index.htm index.php;
+
+    # SSL 证书配置
+    ssl_certificate ${SSL_DIR}/${DOMAIN}.cer;
+    ssl_certificate_key ${SSL_DIR}/${DOMAIN}.key;
+    
+    # SSL 性能与安全优化
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers TLS13-AES-256-GCM-SHA384:TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:EECDH+CHACHA20:EECDH+ECDSA+AES128:EECDH+aRSA+AES128:RSA+AES128:EECDH+ECDSA+AES256:EECDH+aRSA+AES256:RSA+AES256:EECDH+ECDSA+3DES:EECDH+aRSA+3DES:RSA+3DES:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets on;
+
+    # 核心业务逻辑调度
+    include /etc/nginx/fastcgi_php;
+    
+    # 💡 伪静态扩展区 (按需取消注释)
+    # include /etc/nginx/conf.d/discuzx;
+    # include /etc/nginx/conf.d/wordpress;
+
+    # 独立日志隔离
+    access_log /var/log/nginx/${DOMAIN}.access.log dnmplogs;
+    error_log  /var/log/nginx/${DOMAIN}.error.log;
+}
+EOF
+            
+            # 3. 终极重载生效
+            systemctl reload nginx >/dev/null 2>&1
+            echo -e "\033[0;32m[√] 完美闭环！${DOMAIN}.conf 已生效，目录 ${WEB_ROOT} 已准备就绪！\033[0m"
+            echo -e "\033[1;36m   → 您现在可以直接上传代码建站了: https://${DOMAIN}\033[0m"
+            # ==============================================================
         else
             echo -e "\033[0;31m[!] Standalone 模式签发失败！请确认 80 端口未被占用。\033[0m"
             return 1
@@ -1323,8 +1502,8 @@ function debian_os_upgrade() {
         return 1
     fi
     echo ">>> 本地系统版本: Debian $LOCAL_VERSION (代号: $LOCAL_CODENAME)"
-	
-	# ------------------------------------------
+    
+    # ------------------------------------------
     # 依赖自愈补丁：检测并安装缺少的组件
     # ------------------------------------------
     if ! command -v curl >/dev/null 2>&1; then
@@ -1334,7 +1513,6 @@ function debian_os_upgrade() {
         apt-get install -y curl >/dev/null 2>&1
         echo "✅ curl 组件紧急注入完毕！"
     fi
-    # 👆👆👆 补丁结束 👆👆👆
 
     # ------------------------------------------
     # 第二阶段：中美双源动态嗅探最新版本
@@ -1356,7 +1534,6 @@ function debian_os_upgrade() {
         return 1
     fi
 
-    # 利用 awk 精准切割并去除可能存在的隐藏回车符(\r)
     LATEST_VERSION=$(echo "$RELEASE_CONTENT" | awk -F': ' '/^Version:/ {print $2}' | tr -d '\r')
     LATEST_CODENAME=$(echo "$RELEASE_CONTENT" | awk -F': ' '/^Codename:/ {print $2}' | tr -d '\r')
     LATEST_MAJOR=$(echo "$LATEST_VERSION" | cut -d. -f1)
@@ -1380,8 +1557,8 @@ function debian_os_upgrade() {
          return 0
     fi
 
-    # 【防手残安全锁】：禁止跨两代升级
-    let MAX_ALLOWED_MAJOR=$LOCAL_MAJOR+1
+    # 【防手残安全锁】：使用现代 Bash 语法运算
+    local MAX_ALLOWED_MAJOR=$((LOCAL_MAJOR + 1))
     if [ "$LATEST_MAJOR" -gt "$MAX_ALLOWED_MAJOR" ]; then
         echo "❌ 绝对禁止：线上最新版本为 v$LATEST_MAJOR，你的版本为 v$LOCAL_MAJOR。"
         echo "❌ 跨越多代升级会100%导致内核库雪崩，必须手动逐代升级！脚本紧急熔断。"
@@ -1394,25 +1571,26 @@ function debian_os_upgrade() {
     # 第四阶段：核心手术与两段式升级
     # ------------------------------------------
     echo "-> 正在全盘备份并动态重写 APT 软件源..."
-    # 架构级防线：直接备份整个 apt 目录，给自己留一颗绝对安全的后悔药
     cp -a /etc/apt "/etc/apt.bak_$(date +%F_%H%M%S)"
 
-    # 1. 替换传统的 sources.list (防报错机制)
-    if [ -f /etc/apt/sources.list ]; then
-        sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list
-    fi
+    # 1. 就在要开刀的前一秒，呼叫雷达扫描网络！
+    detect_region >/dev/null 2>&1
 
-    # 2. 扫描并替换扩展目录下的所有 .list 和现代的 .sources 文件
-    if [ -d /etc/apt/sources.list.d ]; then
-        # 替换老的 .list 格式 (如 docker.list, php.list)
-        sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list.d/*.list 2>/dev/null || true
-        # 替换 Debian 12 引入的现代 .sources 格式 (如 debian.sources)
-        sed -i "s/$LOCAL_CODENAME/$LATEST_CODENAME/g" /etc/apt/sources.list.d/*.sources 2>/dev/null || true
-    fi
-    echo "✅ 软件源全盘跨代替换完成！"
+    # 2. 拿着算出来的“未来代号”，精准下发给底层！
+    replace_system_sources "$LATEST_CODENAME"
+
+    echo "-> 正在临时挂起第三方扩展源 (Docker/Nginx/PHP 等)..."
+    for ext_file in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+        # 存在性防御
+        [ -e "$ext_file" ] || continue
+        # 排除咱们的标准化系统底座
+        if [[ "$ext_file" != *"/debian.list" && "$ext_file" != *"/debian.sources" ]]; then
+            mv "$ext_file" "${ext_file}.disabled" 2>/dev/null || true
+        fi
+    done
 
     export DEBIAN_FRONTEND=noninteractive
-    echo "-> [1/3] 拉取新系统 ($LATEST_CODENAME) 索引..."
+    echo "-> [1/3] 拉取新系统 ($LATEST_CODENAME) 基础索引..."
     apt-get update -y
 
     echo "-> [2/3] 第一段：最小化平滑过渡升级..."
@@ -1421,8 +1599,17 @@ function debian_os_upgrade() {
     echo "-> [3/3] 第二段：核心 Full-Upgrade 跨代大升级..."
     apt-get full-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
 
-    echo "-> 清理残骸..."
+    echo "-> 清理残骸并恢复第三方扩展源..."
     apt-get autoremove -y && apt-get clean
+    
+    for disabled_file in /etc/apt/sources.list.d/*.disabled; do
+        [ -e "$disabled_file" ] || continue
+        mv "$disabled_file" "${disabled_file%.disabled}" 2>/dev/null || true
+    done
+
+    # 【补丁】：恢复源后静默更新一次索引，防止缓存断层
+    echo "-> 正在刷新全局索引以适配已恢复的扩展源..."
+    apt-get update -y >/dev/null 2>&1
 
     echo -e ""
     print_green "==================================================\n"
