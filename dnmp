@@ -838,6 +838,100 @@ function install_extra_plugins {
 }
 
 # ==========================================
+# 模块：Redis 服务端与 PHP 扩展安装
+# 特性：智能内存分配、Drop-in 配置、基础调优、完整错误处理
+# ==========================================
+function install_redis() {
+    print_info "[+] 正在部署 Redis 内存数据库与 PHP 扩展...\n"
+	
+	# 动态探测当前的 PHP 版本    
+    if [ -z "${ACTUAL_PHP_V:-}" ]; then
+        if command -v php >/dev/null 2>&1; then
+            ACTUAL_PHP_V=$(php -v | head -n 1 | awk '{print $2}' | cut -d. -f1,2)
+        else
+            # 如果 php 还没装，默认版本是 8.2
+            ACTUAL_PHP_V="8.2"
+        fi
+    fi
+
+    # 安装 Redis 服务端和 PHP 扩展
+    print_info "  -> 正在校验并安装核心组件...\n"
+    apt-get update -y >/dev/null 2>&1
+    
+    # 用 check_install 安装 redis-server
+    check_install redis-server "redis-server"
+    
+    # PHP 扩展无独立命令，直接静默安装保证幂等
+    DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends -q -y install "php${ACTUAL_PHP_V}-redis" >/dev/null 2>&1
+
+    # 打印当前安装的版本号
+    local redis_ver=$(redis-server --version 2>/dev/null | awk '{print $3}' || echo "Unknown")
+    print_info "  -> 当前 Redis 版本: ${redis_ver}\n"
+	
+	# PHP 扩展安装完成日志
+    print_info "  -> php${ACTUAL_PHP_V}-redis 已安装完成\n"
+
+    # 智能内存分配
+    local total_mem=$(free -m | awk '/^Mem:/{print $2}')
+    local redis_max_mem="128mb"
+
+    if [ "$total_mem" -le 512 ]; then
+        redis_max_mem="64mb"
+    elif [ "$total_mem" -le 1024 ]; then
+        redis_max_mem="128mb"
+    elif [ "$total_mem" -le 2048 ]; then
+        redis_max_mem="256mb"
+    elif [ "$total_mem" -le 4096 ]; then
+        redis_max_mem="512mb"
+    else
+        redis_max_mem="1024mb"
+    fi
+
+    print_info "  -> 系统物理内存 ${total_mem}MB，为 Redis 分配安全上限 ${redis_max_mem}\n"
+
+    #  Drop-in 配置（推荐方式）
+    local REDIS_CONF_DIR="/etc/redis/redis.conf.d"
+    mkdir -p ${REDIS_CONF_DIR}
+
+    cat > ${REDIS_CONF_DIR}/99-dnmp-redis.conf <<EOF
+# ==========================================
+# DNMP Redis 智能配置 - 内存保护与调优
+# ==========================================
+maxmemory ${redis_max_mem}
+maxmemory-policy allkeys-lru
+# 基础性能优化
+tcp-keepalive 60
+timeout 0
+tcp-backlog 128
+EOF
+
+    # 确保主配置文件包含 drop-in
+    if ! grep -q "include ${REDIS_CONF_DIR}/" /etc/redis/redis.conf; then
+        echo "" >> /etc/redis/redis.conf
+        echo "# DNMP Redis Drop-in 配置" >> /etc/redis/redis.conf
+        echo "include ${REDIS_CONF_DIR}/*.conf" >> /etc/redis/redis.conf
+    fi
+
+    # 重启服务并设置开机自启
+    systemctl restart redis-server
+    systemctl enable redis-server >/dev/null 2>&1
+	systemctl status redis-server &>/dev/null && echo -e "  \e[1;32mredis-server running... [√]\e[0m" || echo -e "  \e[1;31mredis-server stopped... [×]\e[0m"
+
+    # 重启 PHP-FPM 让扩展生效
+    if [ -n "${ACTUAL_PHP_V:-}" ]; then
+        systemctl restart php${ACTUAL_PHP_V}-fpm >/dev/null 2>&1 || true
+		systemctl status php${ACTUAL_PHP_V}-fpm &>/dev/null && echo -e "  \e[1;32mphp${ACTUAL_PHP_V}-fpm running... [√]\e[0m" || echo -e "  \e[1;31mphp${ACTUAL_PHP_V}-fpm stopped... [×]\e[0m"
+    fi
+
+    # 最终验证
+    if systemctl is-active --quiet redis-server; then
+        print_green "[√] Redis 部署完成！已智能分配 ${redis_max_mem} 内存保护\n"
+    else
+        print_red "[!] Redis 启动失败，请检查日志：journalctl -u redis-server\n"
+    fi
+}
+
+# ==========================================
 # 模块六：辅助工具安装 (DNMP 壳与 PHPMyAdmin)
 # ==========================================
 function install_phpmyadmin {
@@ -1789,6 +1883,7 @@ ok)
     install_nginx            # Web 服务器
     install_mysql            # 数据库
     install_php              # PHP 环境与探针
+	install_redis            # 安装 Redis 与内存保护
     install_extra_plugins    # 附加组件 (Memcached, ImageMagick等)
     install_phpmyadmin       # 数据库管理面板 (带 10 秒超时防卡死)
     # ==========================================
@@ -1805,6 +1900,9 @@ db)
 	;;
 pw)
     change_root_pw
+    ;;
+redis)
+    install_redis
     ;;
 *)
     # 拦截所有未知参数或空参数，直接弹出完美的帮助面板
