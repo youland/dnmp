@@ -456,8 +456,10 @@ END
 
 function install_nginx {
     check_install nginx "nginx"
-
-    cat > /etc/nginx/nginx.conf <<END
+	
+	echo -e "\n\033[36m[+] 正在写入优化版 Nginx.conf 全局配置...\033[0m"
+	
+    cat << 'EOF' > /etc/nginx/nginx.conf
 user www-data;
 worker_processes auto;
 pid /var/run/nginx.pid;
@@ -468,9 +470,13 @@ events {
     use epoll;
     worker_connections 2000;
 }
+
 http {
     include       /etc/nginx/mime.types;
     default_type  application/octet-stream;
+
+    # 安全加固，隐藏 Nginx 版本号
+    server_tokens off; 
 
     server_name_in_redirect off;
     server_names_hash_bucket_size 64;
@@ -485,7 +491,8 @@ http {
     client_header_timeout 10;
     send_timeout 60;
  
-    keepalive_timeout  5 5;
+    # 配合 HTTP/2，将 Keepalive 适当调大至 65 秒
+    keepalive_timeout  65;
     tcp_nodelay        on;
  
     output_buffers 1 32k;
@@ -503,27 +510,48 @@ http {
     fastcgi_busy_buffers_size 128k;
     fastcgi_temp_file_write_size 128k;
 
+    # ==========================================
+    # Gzip 终极调优 (针对单页应用与 API)
+    # ==========================================
     gzip on;
-    gzip_min_length  1100;
-    gzip_buffers     4 8k;
-    gzip_http_version 1.0;
-    gzip_comp_level 7;
-    gzip_types       text/plain application/x-javascript text/css application/xml;
-    gzip_disable "MSIE [1-6]\.(?!.*SV1)";
+    gzip_min_length  1k;
+    gzip_buffers     4 16k;
+    gzip_http_version 1.1;
+    
+    # 压缩级别设定为 5，平衡 CPU 算力与网络带宽
+    gzip_comp_level 5;
+    
+    # 全面覆盖 JSON 与现代前端资源
+    gzip_types       text/plain text/css application/json application/javascript application/x-javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+    
+    # 适配前端 CDN 缓存代理
+    gzip_vary on;
+    gzip_disable "MSIE [1-6]\.";
 
+    # ==========================================
+    # 全局 SSL 性能优化
+    # ==========================================
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
+    
+    # 开辟 50MB 超大 SSL 缓存池，由所有站点共享，榨干握手性能
+    ssl_session_cache shared:SSL:50m; 
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
 
-    log_format  dnmplogs      '\$remote_addr - [\$time_local] "\$request" '
-                              '\$status \$body_bytes_sent "\$http_referer"'
-                              '"\$http_user_agent" \$http_x_forwarded_for';
-    access_log /var/log/nginx/access.log;
+    # 日志格式定义 (此处的 $ 符号受单引号 EOF 保护，不会丢失)
+    log_format  dnmplogs      '$remote_addr - [$time_local] "$request" '
+                              '$status $body_bytes_sent "$http_referer"'
+                              '"$http_user_agent" $http_x_forwarded_for';
+    access_log /var/log/nginx/access.log dnmplogs;
     error_log /var/log/nginx/error.log;
 
     include /etc/nginx/conf.d/*.conf;
     include /etc/nginx/sites-enabled/*;
 }
-END
+EOF
+
+	echo -e "\033[32m[√] Nginx.conf 配置写入完成！\033[0m"
 
     if [ ! -d /etc/nginx/sites-available ]; then
         mkdir -p /etc/nginx/sites-available
@@ -534,41 +562,42 @@ END
     
     cat > /etc/nginx/sites-enabled/default <<END
 # ==========================================
-# 全局防线 1：只允许精确通过 IP 访问面板
+# 全局防线 只允许精确通过 IP 访问面板
 # 作用：展示控制台面板
 # ==========================================
 server {
     listen 80;
     server_name ${hostipv4};
     
+	# default 根目录
     root /var/www/default;
     index index.html index.htm index.php;
+	
+	# PHP 处理探针
     include /etc/nginx/fastcgi_php;
-    
-    access_log /var/log/nginx/ip_access.log;
+	
+	# 访问日志 (调用全局 dnmplogs 格式)
+    access_log /var/log/nginx/default.access.log dnmplogs;
 }
 
 # ==========================================
-# 2. HTTP (80) 阻断：阻断所有未配置的解析域名
+# HTTP (80) 阻断：阻断所有未配置的解析域名
 # ==========================================
 server {
     listen 80 default_server;
     server_name _;
 
-    # 🟢 保留 ACME 绿灯通道，方便签证书
-    location ^~ /.well-known/acme-challenge/ {
-        allow all;
-        root /var/www/default;
-    }    
+    # ACME 验证通道
+    include /etc/nginx/acme_challenge.conf;    
 
-    # 🔴 除 ACME 以外的所有访问，直接拔网线！
+    #  除 ACME 以外的所有访问，直接拔网线！
     location / {
         return 444; 
-    }
+    }	
 }
 
 # ==========================================
-# 3. HTTPS (443) 终极黑洞：拒绝所有 SSL 握手
+# HTTPS (443) 终极黑洞：拒绝所有 SSL 握手
 # ==========================================
 server {
     listen 443 ssl default_server;
@@ -1233,47 +1262,58 @@ EOF
 server {
     listen 80;
     server_name ${DOMAIN};
-
-    # 🟢 引入全局 Let's Encrypt 验证防线，用于域名ssl证书续签
+    
+    # ACME 验证通道
     include /etc/nginx/acme_challenge.conf;
-
-    # 🔴 强制跳转：正常访客一律强制到 HTTPS
+    
+    # 强制 HTTPS 跳转
     location / {
         return 301 https://${DOMAIN}\$request_uri;
     }
 }
 
 # ==========================================
-# HTTPS (443) - 加密流量
+# 443 加密端口
 # ==========================================
 server {
+	# 启用443 ssl加密连接，增加使用 HTTP/2 语法
     listen 443 ssl;
+    http2 on; # 🚀 开启 HTTP/2 多路复用并发引擎
     server_name ${DOMAIN};
     
-    # 物理路径
+    # 网站根目录
     root ${WEB_ROOT};
     index index.html index.htm index.php;
 
-    # SSL 证书配置
+    # SSL 证书路径
     ssl_certificate ${SSL_DIR}/${DOMAIN}.cer;
     ssl_certificate_key ${SSL_DIR}/${DOMAIN}.key;
     
-    # SSL 性能与安全优化
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers TLS13-AES-256-GCM-SHA384:TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:EECDH+CHACHA20:EECDH+ECDSA+AES128:EECDH+aRSA+AES128:RSA+AES128:EECDH+ECDSA+AES256:EECDH+aRSA+AES256:RSA+AES256:EECDH+ECDSA+3DES:EECDH+aRSA+3DES:RSA+3DES:!MD5;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_timeout 1d;
-    ssl_session_tickets on;
+    # 注意：底层 SSL 优化 (缓存池/协议/加密套件) 已由全局 nginx.conf 接管。
 
-    # 核心业务逻辑调度
+    # 静态资源本地缓存 (2天)
+    # 注意此处的 \$ 需要转义，防止被 Bash 当作变量吃掉
+    location ~* \.(?:css|js|woff2?|eot|ttf|otf|png|jpg|jpeg|gif|webp|svg|ico)\$ {
+        expires 2d;
+        access_log off;
+        add_header Cache-Control "public, max-age=172800";
+    }
+	
+	# 拒绝访问隐藏文件 (安全防护)
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # PHP 处理探针
     include /etc/nginx/fastcgi_php;
     
-    # 💡 伪静态扩展区 (按需取消注释)
+    #  伪静态扩展区 (按需取消注释)
     # include /etc/nginx/conf.d/discuzx;
     # include /etc/nginx/conf.d/wordpress;
 
-    # 独立日志隔离
+    # 访问日志 (调用全局 dnmplogs 格式)
     access_log /var/log/nginx/${DOMAIN}.access.log dnmplogs;
     error_log  /var/log/nginx/${DOMAIN}.error.log;
 }
