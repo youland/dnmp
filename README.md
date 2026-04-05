@@ -1,61 +1,92 @@
-# ⚡ 极简 DNMP 一键自动安装WEB服务器环境
+# ⚡ DNMP - 极简纯净 Web 服务器一键部署脚本
 [![CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
 
-欢迎来到极简DNMP服务器架构文档！这是一套基于 **Debian** 各个版本打造的极限轻量、高度安全的 Web & 容器一键安装脚本。
 
-我们抛弃了市面上臃肿的“全家桶”面板，采用全纯净命令行与局部模块化脚本的形式，将服务器的潜能压榨到极限，并将安全防御做到“密不透风”。
 
-一键安装，安全、快速。所有软件均采用在线安装，软件源均为官方认可或推荐的源。本指南将带你从零开始，在一台纯净的服务器上拉起整套极客防线与`DNMP`自动化部署生产级运行环境。
+**Debian + Nginx + MariaDB + PHP** 极简生产级环境
 
-DNMP即为：`Debian + Nginx + MariaDB + PHP`。
+一行命令，快速部署高性能、安全、纯净的 Web 运行环境。拒绝臃肿面板，专注于极致性能与安全性。
 
-**快速安装**，通过`SSH`登录服务器，使用`root`用户输入命令：
+---
+
+## ✨ 核心特性
+
+- **极致轻量**：纯命令行 + 模块化设计，无任何面板
+- **智能源切换**：自动探测服务器位置，智能使用最优镜像源
+- **安全优先**：严格权限控制，默认屏蔽未配置域名访问
+- **性能优化**：默认开启 BBR、Opcache、Redis 支持
+- **高度幂等**：支持重复执行，不会产生冗余配置
+- **一键证书**：集成 acme.sh，支持自动签发 Let's Encrypt 证书
+
+
+
+## 🚀 快速开始
+
+### 一键安装（推荐）
+
 ```bash
-(curl -sSLO https://dnmp.net/dnmp || wget -qO dnmp https://dnmp.net/dnmp) && bash dnmp ok
+bash <(curl -sSL https://dnmp.net/dnmp) ok
 ```
 
-## 🌐 核心生态矩阵
+### 或手动下载安装  
+```
+wget https://dnmp.net/dnmp && chmod +x dnmp && ./dnmp ok
+```
 
-DNMP 不仅仅是一个脚本，我们为你准备了完整的全套基础设施：
+## 📋 运行环境  
+* **支持系统**：Debian 12 (Bookworm) / Debian 13 (Trixie)
+* **组件标准**：Nginx (最新稳定版)、MariaDB、PHP (动态适配)、Redis (可选)、acme.sh
+* **部署建议**：推荐在最小化安装的纯净系统上运行```
 
-* 🏠 **[DNMP 官方主站 (dnmp.net)](https://dnmp.net)**  
- 
-  查阅最新、最完整的实战部署文档（包含 Flarum、MariaDB 等顶级程序的部署详细方法）。
+> 推荐使用纯净系统（最小化安装）
 
-* 💬 **[DNMP 交流社区 (bbs.dnmp.net)](https://bbs.dnmp.net)**  
- 
-  遇到 Bug 报错？配置不生效？欢迎来到我们的极客避难所发帖提问，探讨架构心得。
+## 📊 安装后默认包含
 
-* 💻 **[GitHub 源代码](https://github.com/youland/dnmp)**  
- 
-  项目的大本营。欢迎提交 Issue 和 Pull Request 共建生态。如果 DNMP 帮到了你，请务必点亮右上角的 ⭐ **Star**！
+* Nginx（最新稳定版 + 深度优化配置）  
+* MariaDB（最新稳定版）  
+* PHP（动态适配当前最新版本）  
+* Redis（可选安装）  
+* phpMyAdmin  
+* acme.sh（SSL 证书自动部署）  
+* Portainer（可选 Docker 面板）  
 
-## 🏆 十大硬核架构亮点
+## 🔧 常用命令
+```
+dnmp start          # 启动所有服务
+dnmp stop           # 停止所有服务
+dnmp restart        # 重启所有服务
+dnmp reload         # 平滑重载配置
+dnmp acme <域名>    # 签发 Let's Encrypt 证书
+dnmp db             # 创建新数据库和用户
+dnmp pw             # 修改 MariaDB root 密码
+dnmp nlog           # 清理并归档 Nginx 日志
+```
 
-* **🔪 无敌生命周期**：脚本兼容各个版本 `Debian` 系统，告别频繁的系统大版本升级焦虑。
-* **🏎️ 极致性能释放**：Nginx + PHP Opcache 内存缓存全开，系统级强制开启 BBR 拥塞控制算法，网络吞吐量直接起飞。
-* **💎 官方源级满血对齐**：Debian 13 (Trixie) 为基础，Nginx、MariaDB、PHP 均全线对接官方最新 Stable (稳定) 源安装，拒绝任何陈旧与不安全版本。
-* **🌍 全球智能测速寻源**：内置动态延迟探测机制，自动为你的 VPS 匹配并切换至物理距离最近、延迟最低的镜像源，让每一次拉取都保持巅峰网速。
-* **🔄 绝对幂等性设计**：内置严苛的状态检测逻辑，支持无限次反复执行。拒绝任何重复安装与冗余垃圾，始终将系统维持在最纯净的极简状态。
-* **🛡️ 绝对物理防御**：Docker 数据挂载目录全线物理隔离，配合 Nginx 底层屏蔽与 127.0.0.1 端口锁，彻底斩断公网恶意扫描。
-* **🤖 全自动化 ACME**：无需手动干预，一键通过 `Let's Encrypt` 签发并部署顶级加密证书。
-* **🧩 模块化非侵入设计**：彻底抛弃“全家桶”式的流氓绑定，各组件支持独立拆分执行，真正的极客积木。
-* **👻 隐身级反侦察网络**：丢弃无 SNI 或空 Host 的恶意请求，让服务器在 Shodan 等扫描引擎面前彻底“隐身”。
-* **🪶 零面板极低占用**：坚决拒绝臃肿面板！零后台常驻进程，即使是小内存的低配 VPS 也能极其丝滑地跑满全套架构。
+## ⚠️ 注意事项
 
-## 🎯 适合人群
-* 厌倦了臃肿面板，追求极致干净系统的洁癖玩家。
-* 需要在同一台机器上优雅共存传统 Web (PHP/HTML) 与现代 Docker 容器的开发者。
-* 重视服务器安全，希望将所有暴露面降到最低的防御者。
-* 畏惧繁杂 Linux 命令行的新手玩家。全自动化引擎替你屏蔽一切底层网络与配置黑洞，告别玄学报错，真正做到“一键点火，开箱即用”。
+* 请使用 root 权限运行脚本  
+* 建议在纯净 Debian 系统上安装  
+* 安装完成后请尽快修改 MariaDB root 密码  
+* SSH 默认端口已修改为 8066  
 
-## ⚙️ 环境先决条件
-* **操作系统**：纯净安装的 Debian，在Debain 12和Debain 13上测试成功
-* **网络环境**：具备完整的公网访问能力。引擎在全自动化构建时，需从云端实时拉取底层依赖与容器镜像，请确保外部路由畅通。
-* **权限状态**：使用 `root` 账户进行最高权限操作
-* **交互软件**：能使用SSH登录到服务器
+## ❓ 常见问题
+Q：安装完成后如何访问 phpMyAdmin？  
+A：浏览器访问 http://你的IP/phpmyadmin
 
-## 交互方式
+Q：如何签发 SSL 证书？  
+A：执行 bash dnmp acme yourdomain.com  
 
-使用指南：https://dnmp.net  
-社区讨论：https://bbs.dnmp.net
+Q：如何查看数据库密码？  
+A：cat /root/.my.cnf  
+
+## 📬 社区与支持
+
+> GitHub 仓库：https://github.com/youland/dnmp  
+问题反馈：欢迎提交 Issue
+
+> 讨论区：https://bbs.dnmp.net
+
+
+
+
+
