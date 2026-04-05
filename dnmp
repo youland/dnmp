@@ -59,6 +59,12 @@ function get_hostip {
 }
 
 function detect_region {
+
+	# 如果 IS_CHINA 已经有值（说明之前已经探测过），则直接退出函数
+    if [ -n "${IS_CHINA:-}" ]; then
+        return 0
+    fi
+	
     print_info "[*] 正在探测服务器地理位置 (双节点 API + 三重特征校验)...\n"
     export IS_CHINA=0
 
@@ -272,6 +278,16 @@ EOF
 
 function opt_bbr() {
     print_info "正在执行底层网络调优 (BBR & Swap)..."
+	
+	# ==========================================
+    # 【检测到 LXC 容器环境则跳过】
+    # ==========================================
+    if [ -f /proc/1/environ ] && grep -a -q "container=lxc" /proc/1/environ 2>/dev/null; then
+        print_warn "\n[-] 状态探测：检测到当前为 LXC 容器环境！\n"
+        print_info "  -> LXC 共享宿主机内核，无法独立挂载 Swap 或修改 BBR 拥塞控制算法。\n"
+        print_info "  -> 请在 PVE 宿主机上开启 BBR，容器将自动继承。此步骤已安全跳过。\n"		
+        return 0
+    fi
 
     # 1. 终极雷达：双重状态探测 (运行时状态 + 静态文件状态)
     # 探测 A：当前内核是否正在运行 BBR？
@@ -1619,6 +1635,32 @@ function change_root_pw() {
 # 触发方式：bash dnmp os
 # ==========================================
 function debian_os_upgrade() {
+	# ------------------------------------------
+    # LXC虚拟化跨版本升级风险极大，检测并屏蔽升级
+    # ------------------------------------------
+    local is_lxc=0
+
+    # 使用 systemd 官方工具检测
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        local virt_type=$(systemd-detect-virt)
+        if [ "$virt_type" == "lxc" ]; then
+            is_lxc=1
+        fi
+    fi
+
+    # 读取内核 init 进程环境变量，双重检测
+    if [ -f /proc/1/environ ] && grep -a -q "container=lxc" /proc/1/environ 2>/dev/null; then
+        is_lxc=1
+    fi
+
+    if [ "$is_lxc" -eq 1 ]; then
+        echo "❌ 检测到当前运行环境为 LXC (轻量级容器)。"
+        echo "❌ 容器与宿主机共享内核，强行跨代升级底层组件会导致系统权限链断裂，必定变砖。"
+        echo "💡 最佳实践：请直接在宿主机模板库中拉取高版本 CT 模板重建容器，严禁就地升级。"
+        print_red "🛑 跨代升级通道已退出！"
+        return 1
+    fi
+	
     echo "=================================================="
     echo " 🚨 警告：你正在启动【全动态】系统大版本跨代升级！"
     echo " ⚠️ 执行前请务必确保重要文件已备份！"
@@ -1637,16 +1679,24 @@ function debian_os_upgrade() {
     LOCAL_CODENAME=$(lsb_release -cs 2>/dev/null || awk -F= '/^VERSION_CODENAME=/{print $2}' /etc/os-release)
 
     if [ -z "$LOCAL_MAJOR" ] || [ -z "$LOCAL_CODENAME" ]; then
-        echo "❌ 致命错误：无法识别本地 Debian 版本与代号，升级紧急熔断！"
+        echo "❌ 致命错误：无法识别本地 Debian 版本与代号，退出！"
         return 1
     fi
     echo ">>> 本地系统版本: Debian $LOCAL_VERSION (代号: $LOCAL_CODENAME)"
+
+    # ==========================================
+    # 测速并换源
+    # ==========================================
+    # 在进行任何 apt 操作前，先用本地代号换一次源，确保后续缺 curl 时能极速拉取
+    echo ">>> 状态探测：正在初始化底层网络环境..."
+    detect_region >/dev/null 2>&1
+    replace_system_sources "$LOCAL_CODENAME" >/dev/null 2>&1
     
     # ------------------------------------------
     # 依赖自愈补丁：检测并安装缺少的组件
     # ------------------------------------------
     if ! command -v curl >/dev/null 2>&1; then
-        echo ">>> 状态探测：系统缺少 curl，正在静默安装..."
+        echo ">>> 状态探测：系统缺少 curl，正在通过优化的镜像源极速安装..."
         export DEBIAN_FRONTEND=noninteractive
         apt-get update -y >/dev/null 2>&1
         apt-get install -y curl >/dev/null 2>&1
