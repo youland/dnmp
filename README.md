@@ -17,6 +17,7 @@
 - **性能优化**：默认开启 BBR、Opcache、Redis 支持
 - **高度幂等**：支持重复执行，不会产生冗余配置
 - **一键证书**：集成 acme.sh，支持自动签发 Let's Encrypt 证书
+- **Docker集成**：选装 Docker 环境和 Portainer（可选 Docker 面板）
 
 
 
@@ -48,7 +49,7 @@ wget https://dnmp.net/dnmp && chmod +x dnmp && ./dnmp ok
 * Redis（可选安装）  
 * phpMyAdmin  
 * acme.sh（SSL 证书自动部署）  
-* Portainer（可选 Docker 面板）  
+
 
 ## 🔧 常用命令
 ```
