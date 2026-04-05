@@ -86,6 +86,8 @@ A：cat /root/.my.cnf
 
 > 讨论区：https://bbs.dnmp.net
 
+> 详细使用指南：https://dnmp.net
+
 
 
 
