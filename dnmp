@@ -245,25 +245,41 @@ function remove_unneeded {
     print_green "[√] 冲突清理与系统瘦身完毕！\n"
 }
 
-function config_ssh_port {
-    print_info "[+] 配置 SSH 远程访问 (修改端口为 8066)...\n"
-	
-	# 确保 sshd_config.d 目录存在
+function config_ssh {
+    print_info "[+] 配置 SSH 远程访问...\n"
+    
+    # 确保 sshd_config.d 目录存在
     mkdir -p /etc/ssh/sshd_config.d/
-	
-    # 修改端口，使用drop-in模式，直接生成高优先级的专属配置文件，覆盖写入，保证幂等性
-    cat <<EOF > /etc/ssh/sshd_config.d/99-dnmp-port.conf
-# ==========================================
-# DNMP 自定义 SSH 端口配置
-# ==========================================
-Port 8066
-EOF
+    
+    # -----------------------------------------------------------------
+    # 遍历、备份并禁用 /etc/ssh/sshd_config.d/ 目录下的所有现有配置文件
+    # -----------------------------------------------------------------
+    for conf_file in /etc/ssh/sshd_config.d/*.conf; do
+        # 存在性防错：如果目录为空，跳过当前循环
+        [ -e "$conf_file" ] || continue
 
-	# 身份验证策略
-    cat <<EOF > /etc/ssh/sshd_config.d/99-dnmp-auth.conf
+        # 排除目标扩展文件，防止重复运行脚本时将自己的配置文件备份
+        if [ "$conf_file" == "/etc/ssh/sshd_config.d/01_sshd_config.conf" ]; then
+            continue
+        fi
+
+        # 追加 .bak 后缀，使文件脱离 SSH 的读取范围
+        mv "$conf_file" "${conf_file}.bak" 2>/dev/null || true
+    done
+
+    # -----------------------------------------------------------------
+    # 用Drop-in方式自定义ssh端口与root登录
+    # 使用 01 命名抢占最高优先级，集中写入自定义扩展
+    # -----------------------------------------------------------------
+    cat <<EOF > /etc/ssh/sshd_config.d/01_sshd_config.conf
 # ==========================================
-# DNMP SSH 登录认证策略
+# DNMP SSH 全局扩展配置
 # ==========================================
+
+# 1. 自定义 SSH 端口
+Port 8066
+
+# 2. 登录认证策略
 # 开启密钥登录支持
 PubkeyAuthentication yes
 
@@ -273,7 +289,8 @@ EOF
 
     # 重启服务使之生效
     systemctl restart ssh || systemctl restart sshd
-    print_green "[√] SSH 端口 8066 配置并重启完毕！\n"
+    print_green "[√] SSH 配置重构完毕！已禁用历史冲突文件并生成统一扩展配置。\n"
+    print_green "自定义SSH信息请看 /etc/ssh/sshd_config.d/01_sshd_config.conf\n"
 }
 
 function opt_bbr() {
@@ -1939,7 +1956,7 @@ ok)
     # ==========================================
     # 阶段四：安全收尾与控制台交付
     # ==========================================
-    config_ssh_port          # 留好备用安全后门
+    config_ssh				 # SSH Drop-in 配置
     install_dnmp             # 注入全局 dnmp 命令并打印终极交付面板
     ;;
 build)
