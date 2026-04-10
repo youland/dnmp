@@ -26,7 +26,7 @@
 ### 一键安装（推荐）
 
 ```bash
-bash <(curl -sSL https://dnmp.net/dnmp) ok
+curl -sSL https://dnmp.net/dnmp -O && bash dnmp ok
 ```
 
 ### 或手动下载安装  
