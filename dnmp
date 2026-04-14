@@ -1653,6 +1653,28 @@ function change_root_pw() {
 # ==========================================
 function debian_os_upgrade() {
 	# ------------------------------------------
+    # 系统升级防呆：检测是否已存在 Web 环境
+    # ------------------------------------------
+    if [ -d "/etc/nginx" ] || [ -d "/etc/php" ]; then
+        echo -e ""
+        print_red "=================================================================\n"
+        print_red " 🚨 警告：检测到当前系统已部署 Web环境（Nginx/PHP）！\n"
+        print_red "=================================================================\n"
+        echo " ❌ 在此状态下强行进行 OS 跨代升级，将导致第三方组件的底层断层！"
+        echo " ❌ 升级完成后，您的 Nginx 和 PHP 极大概率会触发段错误并彻底瘫痪！"
+        echo ""
+        print_warn " 💡 强烈建议：直接按 Ctrl+C 退出！"
+        print_warn " 💡 跨代升级功能仅专为刚开机的【纯净裸机】设计。"
+        echo ""
+        read -p "如果您清楚后果并执意强行破坏现有环境，请大写输入 'YES' 继续： " force_continue
+        if [ "$force_continue" != "YES" ]; then
+            print_green "操作已安全中止，您的业务环境未受影响。\n"
+            return 0
+        fi
+        print_red ">>> 警告：您已解除安全锁，即将开始强行跨代升级...\n"
+    fi
+
+	# ------------------------------------------
     # LXC虚拟化跨版本升级风险极大，检测并屏蔽升级
     # ------------------------------------------
     local is_lxc=0
@@ -1850,7 +1872,8 @@ function show_help() {
     print_green "  bash dnmp sys"
     echo -e "        - 仅执行系统基础清理、时区设定与依赖瘦身\n"
     print_red   "  bash dnmp os"
-    echo -e "         - ⚠️ [高危] 启动 Debian 全动态大版本跨代升级\n"
+    echo -e "         - ⚠️ [高危] 启动 Debian 全动态大版本跨代升级"
+    print_red   "                    (!!! 仅限纯净新系统使用，已装 Web 环境严禁执行 !!!)\n"
 
     print_info " [🧩 局部模块化调试]\n"
     print_warn "  bash dnmp nginx"
