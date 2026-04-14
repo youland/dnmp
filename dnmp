@@ -295,50 +295,54 @@ EOF
 
 function opt_bbr() {
     print_info "正在执行底层网络调优 (BBR & Swap)..."
-	
-	# ==========================================
-    # 【检测到 LXC 容器环境则跳过】
+    
+    # ==========================================
+    # 拦截 LXC 容器环境
     # ==========================================
     if [ -f /proc/1/environ ] && grep -a -q "container=lxc" /proc/1/environ 2>/dev/null; then
         print_warn "\n[-] 状态探测：检测到当前为 LXC 容器环境！\n"
         print_info "  -> LXC 共享宿主机内核，无法独立挂载 Swap 或修改 BBR 拥塞控制算法。\n"
-        print_info "  -> 请在 PVE 宿主机上开启 BBR，容器将自动继承。此步骤已安全跳过。\n"		
+        print_info "  -> 请在 PVE 宿主机上开启 BBR，容器将自动继承。此步骤已安全跳过。\n"        
         return 0
     fi
 
-    # 1. 终极雷达：双重状态探测 (运行时状态 + 静态文件状态)
-    # 探测 A：当前内核是否正在运行 BBR？
-    local bbr_active=$(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -qw "bbr" && echo "yes" || echo "no")
-    
-    # 探测 B：全盘扫描历史配置文件 (涵盖 /etc/sysctl.conf 及 /etc/sysctl.d/ 下的所有文件)
-    local bbr_configured=$(grep -qE "^net.ipv4.tcp_congestion_control\s*=\s*bbr" /etc/sysctl.conf /etc/sysctl.d/*.conf 2>/dev/null && echo "yes" || echo "no")
-
-    if [ "$bbr_active" == "yes" ] || [ "$bbr_configured" == "yes" ]; then
-        print_green "状态探测：系统内核已激活 BBR，或历史配置已存在，跳过重复覆盖！"
-        return 0
-    fi
-
-    # 2. 探测物理内存与 Swap 护城河
+    # ==========================================
+    # 物理内存探测与 Swap 创建
+    # ==========================================
     local total_mem=$(free -m | awk '/^Mem:/{print $2}')
     local total_swap=$(free -m | awk '/^Swap:/{print $2}')
     
     if [ "$total_mem" -le 1200 ] && [ "$total_swap" -eq 0 ]; then
-        print_info "检测到低内存，正在挂载 1GB Swap..."
-        fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile >/dev/null 2>&1
+        print_info "检测到低内存，正在挂载 1GB Swap 缓冲防线...\n"
+        # 优先使用高速 fallocate，如果文件系统不支持则自动降级使用传统 dd 命令
+        fallocate -l 1G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+        chmod 600 /swapfile
+        mkswap /swapfile >/dev/null 2>&1
+        swapon /swapfile >/dev/null 2>&1
         grep -q "/swapfile" /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        print_green "  -> Swap 挂载成功！\n"
     fi
 
-    local tcp_max
-    if [ "$total_mem" -le 800 ]; then tcp_max=8388608
-    elif [ "$total_mem" -le 1500 ]; then tcp_max=16777216
-    else tcp_max=33554432; fi
-
-    # 3. 规范化配置：采用drop-in模式配置bbr
-local SYSCTL_CONF="/etc/sysctl.d/99-bbr.conf"
+    # ==========================================
+    # 高并发与 BBR 核心调优
+    # ==========================================
+    local SYSCTL_CONF="/etc/sysctl.d/99-bbr.conf"
     
-    cat <<EOF > ${SYSCTL_CONF}
+    if [ ! -f "${SYSCTL_CONF}" ]; then
+        print_info "正在动态计算缓冲区并注入 BBR 拥塞算法...\n"
+        
+        # 动态计算 TCP 缓冲区尺寸
+        local tcp_max
+        if [ "$total_mem" -le 800 ]; then tcp_max=8388608
+        elif [ "$total_mem" -le 1500 ]; then tcp_max=16777216
+        else tcp_max=33554432; fi
+
+        # 尝试预加载 bbr 模块
+        modprobe tcp_bbr >/dev/null 2>&1 || true
+
+        cat <<EOF > ${SYSCTL_CONF}
 # ==========================================
-# 极限网络底层压榨 (完全体 BBR 与高并发调优)
+# DNMP 极限网络底层压榨 (完全体 BBR 与高并发调优)
 # ==========================================
 # 1. BBR 与 吞吐量队列策略
 net.core.default_qdisc = fq
@@ -365,10 +369,14 @@ net.ipv4.tcp_keepalive_probes = 5
 net.ipv4.tcp_keepalive_intvl = 15
 net.ipv4.tcp_max_tw_buckets = 32768
 net.ipv4.ip_local_port_range = 10000 65000
+
+# 4. 代理与 Web 极速响应优化
+net.ipv4.tcp_slow_start_after_idle = 0
 EOF
 
-    sysctl --system >/dev/null 2>&1
-    print_green "底层bbr网络调优完成，配置文件在 ${SYSCTL_CONF}！"
+        sysctl --system >/dev/null 2>&1
+        print_green "底层网络协议栈调优完成，配置文件 ${SYSCTL_CONF}！\n"
+    fi
 }
 
 # ==========================================
