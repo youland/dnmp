@@ -382,9 +382,19 @@ EOF
 # ==========================================
 # 模块四：智能软件源分发路由 (Sury 源)
 # ==========================================
-function _add_sury_source_core {
-    local sury_base="$1"
-    print_info "[+] 正在写入 Sury 软件源，基础地址: $sury_base\n"
+function add_app_sources {
+    local sury_base
+
+    # 读取雷达信号，智能分发
+    if [ "${IS_CHINA:-0}" -eq 1 ]; then
+        print_green "[*] 使用国内策略：调用科大镜像源\n"
+        sury_base="https://mirrors.ustc.edu.cn/sury"
+    else
+        print_green "[*] 使用海外策略：调用全球官方源\n"
+        sury_base="https://packages.sury.org"
+    fi
+
+    print_info "[+] 正在写入 Sury 软件源，基础地址: ${sury_base}\n"
     
     apt-get -y install lsb-release ca-certificates curl
     
@@ -395,17 +405,6 @@ function _add_sury_source_core {
     sh -c "echo \"deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] ${sury_base}/php/ \$(lsb_release -sc) main\" > /etc/apt/sources.list.d/php.list"
     
     apt-get update
-}
-
-function add_app_sources {
-    # 读取雷达信号，智能分发
-    if [ "${IS_CHINA:-0}" -eq 1 ]; then
-        print_green "[*] 使用国内策略：调用上海交大镜像源\n"
-        _add_sury_source_core "https://mirror.sjtu.edu.cn/sury"
-    else
-        print_green "[*] 使用海外策略：调用全球官方源\n"
-        _add_sury_source_core "https://packages.sury.org"
-    fi
 }
 
 # ==========================================
