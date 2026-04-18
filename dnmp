@@ -833,6 +833,62 @@ session.sid_length = 26
 session.trans_sid_tags = "a=href,area=href,frame=src,form="
 session.sid_bits_per_character = 5
 END
+
+	# 采用 Debian 官方推荐的 Drop-in 模式，统一配置 CLI 和 FPM
+    # =========================================================
+    echo "创建 DNMP 自定义 PHP 配置文件..."
+    cat > /etc/php/${ACTUAL_PHP_V}/mods-available/dnmp-php.ini <<EOF
+; DNMP 核心运行配置
+date.timezone = Asia/Shanghai
+upload_max_filesize = 50M
+post_max_size = 50M
+memory_limit = 256M
+max_execution_time = 60
+
+; =====================================
+; 安全性增强
+; =====================================
+; 隐藏 HTTP 响应头中的 X-Powered-By: PHP 信息，防止暴露版本号
+expose_php = Off
+
+; =====================================
+; Opcache & JIT 性能优化 (PHP 8.x)
+; =====================================
+opcache.enable = 1
+opcache.enable_cli = 1
+; 分配 128M 内存用于存放预编译的字节码，大幅降低 CPU 负载
+opcache.memory_consumption = 128
+opcache.interned_strings_buffer = 16
+; 提高最大加速文件数，设为 10000 避免缓存击穿
+opcache.max_accelerated_files = 10000
+; 每 60 秒检查一次文件更新，兼顾性能与日常调试修改
+opcache.revalidate_freq = 60
+opcache.save_comments = 1
+
+; 开启 JIT (即时编译)，将热点代码直接编译为机器码
+opcache.jit = tracing
+opcache.jit_buffer_size = 64M
+EOF
+
+	# 使用 phpenmod 激活配置，自动为 cli 和 fpm 创建软链接
+    phpenmod -v ${ACTUAL_PHP_V} dnmp-php
+    # =========================================================
+	
+	# 优化 FPM 进程池策略 (采用 Drop-in 方式，命名为 zz- 开头确保最后加载覆盖)
+	cat > /etc/php/${ACTUAL_PHP_V}/fpm/pool.d/zz_www.conf <<EOF
+[www]
+pm = dynamic
+pm.max_children = 20
+pm.start_servers = 4
+pm.min_spare_servers = 2
+pm.max_spare_servers = 6
+pm.max_requests = 500
+EOF
+
+    # 重启服务命令，让刚刚激发的配置生效
+    systemctl restart php${ACTUAL_PHP_V}-fpm
+    systemctl enable php${ACTUAL_PHP_V}-fpm
+	
     fi
 
 	# ==========================================
