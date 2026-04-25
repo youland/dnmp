@@ -52,10 +52,16 @@ function check_sanity {
 
 function get_hostip {
     # IPv4：使用阿里公共 DNS (223.5.5.5) 作为本地内核路由探针
-    hostipv4=$(ip route get 223.5.5.5 2>/dev/null | grep -oP 'src \K\S+' || hostname -I | awk '{print $1}')
+    hostipv4=$(curl -4 -s -m 3 https://api.ipify.org || \
+               curl -4 -s -m 3 https://ifconfig.me/ip || \
+               ip route get 223.5.5.5 2>/dev/null | grep -oP 'src \K\S+' || \
+               hostname -I | awk '{print $1}')
     
     # IPv6：使用阿里公共 DNS IPv6 (2400:3200::1) 作为本地内核路由探针
-    hostipv6=$(ip -6 route get 2400:3200::1 2>/dev/null | grep -oP 'src \K\S+' || ip -6 address show | grep inet6 | grep -v -e '::1/128' -e 'fe80' | awk 'NR==1 {print $2}' | cut -d'/' -f1 || echo "")
+    hostipv6=$(curl -6 -s -m 3 https://api64.ipify.org || \
+               ip -6 route get 2400:3200::1 2>/dev/null | grep -oP 'src \K\S+' || \
+               ip -6 address show | grep inet6 | grep -v -e '::1/128' -e 'fe80' | awk 'NR==1 {print $2}' | cut -d'/' -f1 || \
+               echo "")
 }
 
 function detect_region {
@@ -120,56 +126,71 @@ function detect_region {
 }
 
 function replace_system_sources {
-    # 1. 动态获取当前 Debian 版本代号
-    local CODENAME="${1:-}"
-    if [ -z "$CODENAME" ]; then
-        CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
-        if [ -z "$CODENAME" ]; then
-            CODENAME="bookworm" # 默认保底
-        fi
-    fi
+    print_info "[*] 正在智能重置 APT 基础源...\n"
 
-    # 针对 Debian 12 自动追加 non-free-firmware 组件
-    local COMPONENTS="main contrib non-free"
-    if [ "$CODENAME" = "bookworm" ]; then
-        COMPONENTS="main contrib non-free non-free-firmware"
-    fi
+    # 获取系统版本号与代号
+    local OS_CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME:-bookworm}")
+    local OS_VERSION=$(. /etc/os-release && echo "${VERSION_ID:-12}")
 
-    print_info "[*] 正在重置 APT 基础源 (Codename: $CODENAME)...\n"
-
-    # 2. 清空主文件sources.list，防范多源冲突
-    if [ -f "/etc/apt/sources.list" ]; then
-        mv /etc/apt/sources.list /etc/apt/sources.list.bak 2>/dev/null || true
-        # 换成标准化注释指引
-        echo "# See /etc/apt/sources.list.d/debian.list" > /etc/apt/sources.list
-    fi
-
-    # 3. 清掉旧格式源 (防范厂商自带的 .sources 冲突)
-    rm -f /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
-    rm -f /etc/apt/sources.list.d/debian.list 2>/dev/null || true
-
-    # 4. 覆盖重写 (全部输出到 debian.list)
+    # 设定目标镜像地址
+    local MIRROR_DEB=""
+    local MIRROR_SEC=""
     if [ "${IS_CHINA:-0}" -eq 1 ]; then
-        print_info "[+] 检测到国内网络，正在写入清华大学镜像 (TUNA)...\n"
-        cat << EOF > /etc/apt/sources.list.d/debian.list
-deb https://mirrors.tuna.tsinghua.edu.cn/debian/ $CODENAME $COMPONENTS
-deb https://mirrors.tuna.tsinghua.edu.cn/debian/ ${CODENAME}-updates $COMPONENTS
-deb https://mirrors.tuna.tsinghua.edu.cn/debian/ ${CODENAME}-backports $COMPONENTS
-deb https://mirrors.tuna.tsinghua.edu.cn/debian-security ${CODENAME}-security $COMPONENTS
+        print_info "[+] 检测到国内网络，准备切换为清华大学镜像 (TUNA)...\n"
+        MIRROR_DEB="https://mirrors.tuna.tsinghua.edu.cn/debian"
+        MIRROR_SEC="https://mirrors.tuna.tsinghua.edu.cn/debian-security"
+    else
+        print_info "[*] 海外网络，准备切换为官方 Debian 镜像...\n"
+        MIRROR_DEB="http://deb.debian.org/debian"
+        MIRROR_SEC="http://security.debian.org/debian-security"
+    fi
+
+    # 清理并备份原有源，防范多格式与云厂商冲突
+    mkdir -p /etc/apt/sources.list.d.bak
+    if [ -f "/etc/apt/sources.list" ]; then
+        mv /etc/apt/sources.list /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null || true
+    fi
+    mv /etc/apt/sources.list.d/debian* /etc/apt/sources.list.d.bak/ 2>/dev/null || true
+
+    # 写入新系统源
+    if [ "$OS_VERSION" -le "11" ]; then
+        # ==========================================
+        # 针对 Debian 11 及以下：传统单行 list 格式
+        # ==========================================
+        cat > /etc/apt/sources.list <<EOF
+deb ${MIRROR_DEB}/ ${OS_CODENAME} main non-free contrib
+deb-src ${MIRROR_DEB}/ ${OS_CODENAME} main non-free contrib
+deb ${MIRROR_SEC} ${OS_CODENAME}-security main
+deb-src ${MIRROR_SEC} ${OS_CODENAME}-security main
+deb ${MIRROR_DEB}/ ${OS_CODENAME}-updates main non-free contrib
+deb-src ${MIRROR_DEB}/ ${OS_CODENAME}-updates main non-free contrib
 EOF
     else
-        print_info "[*] 海外网络，正在写入官方 Debian 镜像...\n"
-        cat << EOF > /etc/apt/sources.list.d/debian.list
-deb http://deb.debian.org/debian/ $CODENAME $COMPONENTS
-deb http://deb.debian.org/debian/ ${CODENAME}-updates $COMPONENTS
-deb http://deb.debian.org/debian/ ${CODENAME}-backports $COMPONENTS
-deb http://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
+        # ==========================================
+        # 针对 Debian 12 及 13：DEB822 与 Mirror 架构
+        # ==========================================
+        mkdir -p /etc/apt/mirrors/
+        echo "${MIRROR_DEB}/" > /etc/apt/mirrors/debian.list
+        echo "${MIRROR_SEC}/" > /etc/apt/mirrors/debian-security.list
+
+        cat > /etc/apt/sources.list.d/debian.sources <<EOF
+Types: deb deb-src
+URIs: mirror+file:///etc/apt/mirrors/debian.list
+Suites: ${OS_CODENAME} ${OS_CODENAME}-updates ${OS_CODENAME}-backports
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb deb-src
+URIs: mirror+file:///etc/apt/mirrors/debian-security.list
+Suites: ${OS_CODENAME}-security
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
     fi
 
-    # 5. 保留树莓派的特殊处理 (兼容 .list 与 .sources 双格式)
+    # 树莓派源特殊处理 (兼容 .list 与 .sources 双格式)
     if [ "${IS_CHINA:-0}" -eq 1 ]; then
-        print_info "  -> 检测到树莓派专用源，正在切换国内清华镜像...\n"
+        print_info "  -> 正在处理树莓派专用扩展源...\n"
         
         # 处理旧版格式 (Bullseye 及以下)
         if [ -f "/etc/apt/sources.list.d/raspi.list" ]; then
@@ -182,9 +203,19 @@ EOF
             sed -i 's|http://archive.raspberrypi.com/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.sources 2>/dev/null || true
             sed -i 's|http://archive.raspberrypi.org/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.sources 2>/dev/null || true
         fi
+
+        # 处理 32位 树莓派 (armhf) 特有的 raspbian 主源
+        if [ -f "/etc/apt/sources.list.d.bak/sources.list.bak" ]; then
+             sed -i 's|http://raspbian.raspberrypi.org/raspbian/|https://mirrors.tuna.tsinghua.edu.cn/raspbian/|g' /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null || true
+             sed -i 's|http://raspbian.raspberrypi.com/raspbian/|https://mirrors.tuna.tsinghua.edu.cn/raspbian/|g' /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null || true
+             # 如果检测到原源是 32位 专属源，将其还原至 sources.list，防止被 Debian 64 位源覆盖导致内核不匹配
+             if grep -q "raspbian" /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null; then
+                 cp /etc/apt/sources.list.d.bak/sources.list.bak /etc/apt/sources.list
+             fi
+        fi
     fi
 
-    print_green "[√] 系统镜像源重置完成！架构纯净！\n"
+    print_green "[√] 系统镜像源重置完成！自动适配 ${OS_VERSION} (${OS_CODENAME})！\n"
 }
 
 # ==========================================
@@ -472,6 +503,7 @@ long_query_time = 1
 default-character-set = utf8mb4
 
 [mysqld]
+bind-address = 127.0.0.1
 character-set-server = utf8mb4
 collation-server = utf8mb4_general_ci
 transaction_isolation = READ-COMMITTED
@@ -732,122 +764,29 @@ location ~ \.php(\$|/) {
 END
     
     if [ -d /etc/php/${ACTUAL_PHP_V}/fpm ]; then
-        rm -f /etc/php/${ACTUAL_PHP_V}/fpm/php-fpm.conf
-        rm -f /etc/php/${ACTUAL_PHP_V}/fpm/php.ini
-        mkdir -p /etc/php/${ACTUAL_PHP_V}/fpm
         
-        cat > /etc/php/${ACTUAL_PHP_V}/fpm/php-fpm.conf <<END
-[global]
-pid = /run/php/php${ACTUAL_PHP_V}-fpm.pid
-include=/etc/php/${ACTUAL_PHP_V}/fpm/pool.d/*.conf
-[www]
-listen = /dev/shm/php-cgi.sock
-listen.allowed_clients = 127.0.0.1
-listen.owner = www-data
-listen.group = www-data
-user = www-data
-group = www-data
-pm = dynamic
-pm.max_children = 10
-pm.start_servers = 6
-pm.min_spare_servers = 3
-pm.max_spare_servers = 9
-pm.max_requests = 0
-request_terminate_timeout = 120
-env[PATH] = /usr/local/bin:/usr/bin:/bin
-env[TMP] = /tmp
-env[TMPDIR] = /tmp
-env[TEMP] = /tmp
-php_flag[display_errors] = on
-php_admin_value[memory_limit] = 256M
-security.limit_extensions = .php .php3 .php4 .php5 .php7
-END
-
-        cat > /etc/php/${ACTUAL_PHP_V}/fpm/php.ini <<END
-[PHP]
-engine = On
-short_open_tag = On
-precision = 14
-output_buffering = 4096
-zlib.output_compression = Off
-implicit_flush = On
-serialize_precision = 100
-zend.enable_gc = On
-expose_php = On
-max_execution_time = 30
-max_input_time = 60
-memory_limit = 128M
-error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
-display_errors = On
-display_startup_errors = On
-log_errors = On
-log_errors_max_len = 1024
-ignore_repeated_errors = Off
-ignore_repeated_source = Off
-report_memleaks = On
-track_errors = Off
-html_errors = Off
-variables_order = "GPCS"
-request_order = "GP"
-register_argc_argv = Off
-auto_globals_jit = On
-post_max_size = 64M
-default_mimetype = "text/html"
-default_charset = "UTF-8"
-enable_dl = Off
-cgi.fix_pathinfo=1
-file_uploads = On
-upload_max_filesize = 32M
-max_file_uploads = 20
-allow_url_fopen = On
-allow_url_include = Off
-default_socket_timeout = 60
-[Date]
-date.timezone = Asia/Shanghai
-[sqlite3]
-sqlite3.defensive = 1
-[Pdo_mysql]
-pdo_mysql.default_socket=
-[mail function]
-SMTP = localhost
-smtp_port = 25
-mail.add_x_header = On
-[Session]
-session.save_handler = files
-session.use_strict_mode = 0
-session.use_cookies = 1
-session.use_only_cookies = 1
-session.name = PHPSESSID
-session.auto_start = 0
-session.cookie_lifetime = 0
-session.cookie_path = /
-session.serialize_handler = php
-session.gc_probability = 1
-session.gc_divisor = 1000
-session.gc_maxlifetime = 1440
-session.cache_limiter = nocache
-session.cache_expire = 180
-session.use_trans_sid = 0
-session.sid_length = 26
-session.trans_sid_tags = "a=href,area=href,frame=src,form="
-session.sid_bits_per_character = 5
-END
-
-	# 采用 Debian 官方推荐的 Drop-in 模式，统一配置 CLI 和 FPM
-    # =========================================================
-    echo "创建 DNMP 自定义 PHP 配置文件..."
-    cat > /etc/php/${ACTUAL_PHP_V}/mods-available/dnmp-php.ini <<EOF
+        # =========================================================
+        # 采用 Debian 官方推荐的 Drop-in 模式
+        # 创建 DNMP 全局 PHP 配置补丁 (自动覆盖原生 php.ini 中的同名参数)
+        # =========================================================
+        print_info "  -> 正在创建 DNMP 自定义 PHP 配置补丁...\n"
+        cat > /etc/php/${ACTUAL_PHP_V}/mods-available/dnmp-php.ini <<EOF
 ; DNMP 核心运行配置
 date.timezone = Asia/Shanghai
 upload_max_filesize = 50M
 post_max_size = 50M
 memory_limit = 256M
 max_execution_time = 60
+default_socket_timeout = 60
 
 ; =====================================
-; 安全性增强
+; 安全性与生产环境加固
 ; =====================================
-; 隐藏 HTTP 响应头中的 X-Powered-By: PHP 信息，防止暴露版本号
+; 生产环境严禁将报错显示在网页前端，防止敏感信息泄露，统一输出到日志
+display_errors = Off
+display_startup_errors = Off
+log_errors = On
+; 隐藏 HTTP 响应头中的 X-Powered-By: PHP 信息
 expose_php = Off
 
 ; =====================================
@@ -855,39 +794,54 @@ expose_php = Off
 ; =====================================
 opcache.enable = 1
 opcache.enable_cli = 1
-; 分配 128M 内存用于存放预编译的字节码，大幅降低 CPU 负载
 opcache.memory_consumption = 128
 opcache.interned_strings_buffer = 16
-; 提高最大加速文件数，设为 10000 避免缓存击穿
 opcache.max_accelerated_files = 10000
-; 每 60 秒检查一次文件更新，兼顾性能与日常调试修改
 opcache.revalidate_freq = 60
 opcache.save_comments = 1
-
-; 开启 JIT (即时编译)，将热点代码直接编译为机器码
 opcache.jit = tracing
 opcache.jit_buffer_size = 64M
 EOF
 
-	# 使用 phpenmod 激活配置，自动为 cli 和 fpm 创建软链接
-    phpenmod -v ${ACTUAL_PHP_V} dnmp-php
-    # =========================================================
-	
-	# 优化 FPM 进程池策略 (采用 Drop-in 方式，命名为 zz- 开头确保最后加载覆盖)
-	cat > /etc/php/${ACTUAL_PHP_V}/fpm/pool.d/zz_www.conf <<EOF
+        # 使用 phpenmod 激活配置，自动为 cli 和 fpm 建立软链接，权重最高
+        phpenmod -v ${ACTUAL_PHP_V} dnmp-php
+        
+        # =========================================================
+        # 统一进程池管理，使用 zz_ 开头确保最后加载，完美接管 [www] 池
+        # =========================================================
+        print_info "  -> 正在注入高性能 FPM 进程池策略...\n"
+        cat > /etc/php/${ACTUAL_PHP_V}/fpm/pool.d/zz_www.conf <<EOF
 [www]
+; 绑定高吞吐的共享内存 UNIX Socket (对接 Nginx)
+listen = /dev/shm/php-cgi.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+
+; 进程池动态伸缩策略
 pm = dynamic
 pm.max_children = 20
 pm.start_servers = 4
 pm.min_spare_servers = 2
 pm.max_spare_servers = 6
 pm.max_requests = 500
+
+; 避免慢执行拖死整个 PHP-FPM
+request_terminate_timeout = 120
+
+; 传递系统环境变量
+env[PATH] = /usr/local/bin:/usr/bin:/bin
+env[TMP] = /tmp
+env[TMPDIR] = /tmp
+env[TEMP] = /tmp
+
+; 极客安全：只解析标准 .php 后缀，斩断所有异常解析链
+security.limit_extensions = .php
 EOF
 
-    # 重启服务命令，让刚刚激发的配置生效
-    systemctl restart php${ACTUAL_PHP_V}-fpm
-    systemctl enable php${ACTUAL_PHP_V}-fpm
-	
+        # 重启服务命令，让补丁立刻生效
+        systemctl restart php${ACTUAL_PHP_V}-fpm
+        systemctl enable php${ACTUAL_PHP_V}-fpm
     fi
 
 	# ==========================================
@@ -1034,7 +988,7 @@ function install_phpmyadmin {
     print_info "[+] 安装 phpMyAdmin...\n"
     mkdir -p /var/www/default /etc/dnmp
     
-    if [ ! -d "/etc/dnmp/phpmyadmin" ]; then
+    if [ ! -d "/etc/dnmp/db1258" ]; then
         local pma_ver
         pma_ver=$(curl -4 -sL -m 10 https://www.phpmyadmin.net/home_page/version.txt | head -n 1 || true)
         
@@ -1059,8 +1013,9 @@ function install_phpmyadmin {
             if tar -tf "$tmp_tar" >/dev/null 2>&1; then
                 # 校验通过，开始真正的解压
                 tar -zxf "$tmp_tar" -C /tmp/
-                mv "$extract_dir" "/etc/dnmp/phpmyadmin"
-                ln -sf /etc/dnmp/phpmyadmin /var/www/default/phpmyadmin
+                mv "$extract_dir" "/etc/dnmp/db1258"
+                ln -sf /etc/dnmp/db1258 /var/www/default/db1258
+                chown -R www-data:www-data /etc/dnmp/db1258
                 
                 # 清理临时压缩包
                 rm -f "$tmp_tar"
@@ -1185,7 +1140,7 @@ END
         <h2>🌐 Web 快捷入口</h2>
         <div class="block">
             <a href="/p.php" target="_blank" class="btn">📊 查看 PHP 性能探针</a>
-            <a href="/phpmyadmin" target="_blank" class="btn">🐬 登录 phpMyAdmin</a>
+            <a href="/db1258" target="_blank" class="btn">🐬 登录 phpMyAdmin</a>
         </div>
 
         <h2>⌨️ CLI 全局快捷命令</h2>
@@ -1603,9 +1558,7 @@ function create_new_db() {
     SQL_STMT="
     CREATE DATABASE IF NOT EXISTS \`${NEW_DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     CREATE USER IF NOT EXISTS '${NEW_DB_USER}'@'localhost' IDENTIFIED BY '${NEW_DB_PASS}';
-    CREATE USER IF NOT EXISTS '${NEW_DB_USER}'@'%' IDENTIFIED BY '${NEW_DB_PASS}';
     GRANT ALL PRIVILEGES ON \`${NEW_DB_NAME}\`.* TO '${NEW_DB_USER}'@'localhost';
-    GRANT ALL PRIVILEGES ON \`${NEW_DB_NAME}\`.* TO '${NEW_DB_USER}'@'%';
     FLUSH PRIVILEGES;
     "
 
@@ -1680,7 +1633,6 @@ function change_root_pw() {
     # 涵盖 localhost 和 % 两种常见权限，确保不遗漏
     mysql -e "
     ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '${NEW_ROOT_PASS}';
-    ALTER USER IF EXISTS 'root'@'%' IDENTIFIED BY '${NEW_ROOT_PASS}';
     FLUSH PRIVILEGES;
     "
 
