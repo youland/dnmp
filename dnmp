@@ -51,15 +51,19 @@ function check_sanity {
 }
 
 function get_hostip {
-    # IPv4：使用阿里公共 DNS (223.5.5.5) 作为本地内核路由探针
-    hostipv4=$(curl -4 -s -m 3 https://api.ipify.org || \
-               curl -4 -s -m 3 https://ifconfig.me/ip || \
-               ip route get 223.5.5.5 2>/dev/null | grep -oP 'src \K\S+' || \
+    # IPv4：通过本地内核路由表获取真实出口 IP
+    hostipv4=$(ip route get 223.5.5.5 2>/dev/null | grep -oP 'src \K\S+' || \
                hostname -I | awk '{print $1}')
     
-    # IPv6：使用阿里公共 DNS IPv6 (2400:3200::1) 作为本地内核路由探针
-    hostipv6=$(curl -6 -s -m 3 https://api64.ipify.org || \
-               ip -6 route get 2400:3200::1 2>/dev/null | grep -oP 'src \K\S+' || \
+    # 如果内核路由表意外获取失败，再退化使用外部 API 进行兜底
+    if [ -z "$hostipv4" ]; then
+        hostipv4=$(curl -4 -s -m 3 https://api.ipify.org || \
+                   curl -4 -s -m 3 https://ifconfig.me/ip || \
+                   echo "127.0.0.1")
+    fi
+    
+    # IPv6：优先查询内核路由表获取本地网卡上的真实 IPv6 地址
+    hostipv6=$(ip -6 route get 2400:3200::1 2>/dev/null | grep -oP 'src \K\S+' || \
                ip -6 address show | grep inet6 | grep -v -e '::1/128' -e 'fe80' | awk 'NR==1 {print $2}' | cut -d'/' -f1 || \
                echo "")
 }
