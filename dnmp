@@ -132,9 +132,19 @@ function detect_region {
 function replace_system_sources {
     print_info "[*] 正在智能重置 APT 基础源...\n"
 
-    # 获取系统版本号与代号
-    local OS_CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME:-bookworm}")
+    # 动态获取系统版本号与代号 (接收外部传参，支持 OS 跨代跃迁)
+    local OS_CODENAME="${1:-}"
     local OS_VERSION=$(. /etc/os-release && echo "${VERSION_ID:-12}")
+
+    if [ -z "$OS_CODENAME" ]; then
+        # 日常安装：如果没有传参，读取本机当前真实代号
+        OS_CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME:-bookworm}")
+    else
+        # 只要不是老旧的 bullseye，强行把版本号标识拉高，确保它走下方最新的 DEB822 分支
+        if [ "$OS_CODENAME" != "bullseye" ] && [ "$OS_CODENAME" != "buster" ]; then
+            OS_VERSION=12 
+        fi
+    fi
 
     # 设定目标镜像地址
     local MIRROR_DEB=""
@@ -149,12 +159,13 @@ function replace_system_sources {
         MIRROR_SEC="http://security.debian.org/debian-security"
     fi
 
-    # 清理并备份原有源，防范多格式与云厂商冲突
-    mkdir -p /etc/apt/sources.list.d.bak
+    # 备份原始源
     if [ -f "/etc/apt/sources.list" ]; then
-        mv /etc/apt/sources.list /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null || true
+        mv /etc/apt/sources.list /etc/apt/sources.list.bak 2>/dev/null || true
     fi
-    mv /etc/apt/sources.list.d/debian* /etc/apt/sources.list.d.bak/ 2>/dev/null || true
+    # 删除旧格式或云厂商自带的源配置，为下面重建腾出干净空间
+    rm -f /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+    rm -f /etc/apt/sources.list.d/debian.list 2>/dev/null || true
 
     # 写入新系统源
     if [ "$OS_VERSION" -le "11" ]; then
@@ -171,7 +182,7 @@ deb-src ${MIRROR_DEB}/ ${OS_CODENAME}-updates main non-free contrib
 EOF
     else
         # ==========================================
-        # 针对 Debian 12 及 13：DEB822 与 Mirror 架构
+        # 针对 Debian 12 及 13：DEB822 与 Mirror 池架构
         # ==========================================
         mkdir -p /etc/apt/mirrors/
         echo "${MIRROR_DEB}/" > /etc/apt/mirrors/debian.list
@@ -192,7 +203,7 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
     fi
 
-    # 树莓派源特殊处理 (兼容 .list 与 .sources 双格式)
+    # 树莓派专属拓展源特殊处理 (兼容 .list 与 .sources 双格式)
     if [ "${IS_CHINA:-0}" -eq 1 ]; then
         print_info "  -> 正在处理树莓派专用扩展源...\n"
         
@@ -208,18 +219,17 @@ EOF
             sed -i 's|http://archive.raspberrypi.org/debian/|https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/|g' /etc/apt/sources.list.d/raspi.sources 2>/dev/null || true
         fi
 
-        # 处理 32位 树莓派 (armhf) 特有的 raspbian 主源
-        if [ -f "/etc/apt/sources.list.d.bak/sources.list.bak" ]; then
-             sed -i 's|http://raspbian.raspberrypi.org/raspbian/|https://mirrors.tuna.tsinghua.edu.cn/raspbian/|g' /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null || true
-             sed -i 's|http://raspbian.raspberrypi.com/raspbian/|https://mirrors.tuna.tsinghua.edu.cn/raspbian/|g' /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null || true
-             # 如果检测到原源是 32位 专属源，将其还原至 sources.list，防止被 Debian 64 位源覆盖导致内核不匹配
-             if grep -q "raspbian" /etc/apt/sources.list.d.bak/sources.list.bak 2>/dev/null; then
-                 cp /etc/apt/sources.list.d.bak/sources.list.bak /etc/apt/sources.list
+        # 处理 32位 树莓派 (armhf) 特有的 raspbian 主源 (从 sources.list.bak 中恢复)
+        if [ -f "/etc/apt/sources.list.bak" ]; then
+             sed -i 's|http://raspbian.raspberrypi.org/raspbian/|https://mirrors.tuna.tsinghua.edu.cn/raspbian/|g' /etc/apt/sources.list.bak 2>/dev/null || true
+             sed -i 's|http://raspbian.raspberrypi.com/raspbian/|https://mirrors.tuna.tsinghua.edu.cn/raspbian/|g' /etc/apt/sources.list.bak 2>/dev/null || true
+             if grep -q "raspbian" /etc/apt/sources.list.bak 2>/dev/null; then
+                 cp /etc/apt/sources.list.bak /etc/apt/sources.list
              fi
         fi
     fi
 
-    print_green "[√] 系统镜像源重置完成！自动适配 ${OS_VERSION} (${OS_CODENAME})！\n"
+    print_green "[√] 系统镜像源重置完成！架构纯净，已适配底层代号：${OS_CODENAME}！\n"
 }
 
 # ==========================================
@@ -417,28 +427,47 @@ EOF
 # ==========================================
 # 模块四：智能软件源分发路由 (Sury 源)
 # ==========================================
+# ==========================================
+# 模块四：智能软件源分发路由 (Sury 源 & Nginx 官方源)
+# ==========================================
 function add_app_sources {
     local sury_base
+    local nginx_base
 
     # 读取雷达信号，智能分发
     if [ "${IS_CHINA:-0}" -eq 1 ]; then
-        print_green "[*] 使用国内策略：调用科大镜像源\n"
+        print_info "[*] 使用国内策略：调用科大(PHP)与清华镜像源(Nginx)\n"
         sury_base="https://mirrors.ustc.edu.cn/sury"
+        # Nginx 国内清华镜像 (此处使用的是稳定版 stable。若要主线版可改为 /nginx/mainline/debian)
+        nginx_base="https://mirrors.tuna.tsinghua.edu.cn/nginx/debian"
     else
-        print_green "[*] 使用海外策略：调用全球官方源\n"
+        print_info "[*] 使用海外策略：调用全球官方源(PHP & Nginx)\n"
         sury_base="https://packages.sury.org"
+        # Nginx 官方源
+        nginx_base="http://nginx.org/packages/debian"
     fi
 
-    print_info "[+] 正在写入 Sury 软件源，基础地址: ${sury_base}\n"
+    print_info "[+] 正在写入扩展软件源...\n"
     
-    apt-get -y install lsb-release ca-certificates curl
-    
+    # 确保基础依赖存在 (增加 gnupg2 用于处理 Nginx 密钥)
+    apt-get -y install lsb-release ca-certificates curl gnupg2
+
+    # ------------------------------------------
+    # 注入 PHP 专用的 Sury 镜像源
+    # ------------------------------------------
     curl -sSLo /tmp/debsuryorg-archive-keyring.deb "${sury_base}/debsuryorg-archive-keyring.deb"
-    dpkg -i /tmp/debsuryorg-archive-keyring.deb
-    
-    sh -c "echo \"deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] ${sury_base}/nginx/ \$(lsb_release -sc) main\" > /etc/apt/sources.list.d/nginx.list"
+    dpkg -i /tmp/debsuryorg-archive-keyring.deb 2>/dev/null || true
     sh -c "echo \"deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] ${sury_base}/php/ \$(lsb_release -sc) main\" > /etc/apt/sources.list.d/php.list"
+
+    # ------------------------------------------
+    # 注入 Nginx 官方源
+    # ------------------------------------------
+    # 下载并导入 Nginx 官方 GPG 密钥
+    curl -fsSL -m 5 https://nginx.org/keys/nginx_signing.key | gpg --dearmor --yes -o /usr/share/keyrings/nginx-archive-keyring.gpg 2>/dev/null || true
     
+    # 写入 Nginx 源配置
+    sh -c "echo \"deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] ${nginx_base}/ \$(lsb_release -sc) nginx\" > /etc/apt/sources.list.d/nginx.list"
+
     apt-get update
 }
 
@@ -1817,8 +1846,7 @@ function debian_os_upgrade() {
     # ------------------------------------------
     # 第四阶段：核心手术与两段式升级
     # ------------------------------------------
-    echo "-> 正在全盘备份并动态重写 APT 软件源..."
-    cp -a /etc/apt "/etc/apt.bak_$(date +%F_%H%M%S)"
+    echo "-> 正在动态重写 APT 软件源......"
 
     # 1. 扫描网络
     detect_region >/dev/null 2>&1
