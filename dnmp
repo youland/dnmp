@@ -439,7 +439,7 @@ function add_app_sources {
         print_info "[*] 使用国内策略：调用科大(PHP)与清华镜像源(Nginx)\n"
         sury_base="https://mirrors.ustc.edu.cn/sury"
         # Nginx 国内清华镜像 (此处使用的是稳定版 stable。若要主线版可改为 /nginx/mainline/debian)
-        nginx_base="https://mirrors.tuna.tsinghua.edu.cn/nginx/debian"
+        nginx_base="https://mirrors.ustc.edu.cn/nginx/debian"
     else
         print_info "[*] 使用海外策略：调用全球官方源(PHP & Nginx)\n"
         sury_base="https://packages.sury.org"
