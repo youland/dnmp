@@ -413,7 +413,7 @@ net.ipv4.tcp_keepalive_time = 300
 net.ipv4.tcp_keepalive_probes = 5
 net.ipv4.tcp_keepalive_intvl = 15
 net.ipv4.tcp_max_tw_buckets = 32768
-net.ipv4.ip_local_port_range = 10000 65000
+net.ipv4.ip_local_port_range = 10000 65535
 
 # 4. 代理与 Web 极速响应优化
 net.ipv4.tcp_slow_start_after_idle = 0
